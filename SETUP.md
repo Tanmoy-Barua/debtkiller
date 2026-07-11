@@ -1,10 +1,13 @@
-# Debt Destroyer cloud setup
+# Debt Destroyer — shared cloud setup (no login)
+
+Anyone with the app URL can load and save the same live data. No sign-in.
 
 ## 1. Create Supabase project
-1. Create a project at Supabase.
-2. Open **Authentication → Providers → Anonymous Sign-Ins** and enable it.
-3. Open **SQL Editor**, paste `supabase-setup.sql`, and run it.
-4. Open **Project Settings → API** and copy the Project URL and anon/publishable key.
+1. Create a project at [supabase.com](https://supabase.com).
+2. Open **SQL Editor**, paste `supabase-setup.sql`, and run it.
+3. Open **Project Settings → API** and copy:
+   - Project URL
+   - anon / public key
 
 ## 2. Connect the app
 In this project folder:
@@ -13,23 +16,30 @@ In this project folder:
 cp .env.example .env
 ```
 
-Edit `.env` and enter your two Supabase values.
+Edit `.env`:
 
-Then run:
+```bash
+VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+```
+
+Then:
 
 ```bash
 npm install
 npm run dev
 ```
 
-The header should show `CLOUD SAVED` after data is saved.
+The header should show **CLOUD SAVED** after data saves. Open the same app on another device — changes sync live.
 
 ## 3. Deploy to Vercel
-1. Push this folder to GitHub or import it directly into Vercel.
-2. Add these environment variables in Vercel:
+1. Import this GitHub repo into Vercel.
+2. Add environment variables:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
 3. Deploy.
 
-## No-login behavior
-The app silently creates an anonymous Supabase user. Data is private to that browser profile. It survives refreshes and cloud deployments, but a different browser/device receives a different anonymous identity. Keep JSON backups for recovery.
+## Notes
+- Data is stored in one shared Supabase row (`id = shared`).
+- A local backup still saves in the browser if the network is down.
+- Anyone who has your deployed URL (and the public anon key in the frontend) can read/write this data — treat the URL like a private link.

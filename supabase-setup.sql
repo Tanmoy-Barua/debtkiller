@@ -1,25 +1,46 @@
 -- Run this once in Supabase: SQL Editor -> New query -> Run
+-- Shared no-login store: one row that any device can read/write with the anon key.
 
-create table if not exists public.app_state (
-  user_id uuid primary key references auth.users(id) on delete cascade,
+drop table if exists public.app_state;
+
+create table public.app_state (
+  id text primary key,
   state jsonb not null default '{}'::jsonb,
   updated_at timestamptz not null default now()
 );
 
 alter table public.app_state enable row level security;
 
-create policy "Users can read their own app state"
+grant select, insert, update on table public.app_state to anon, authenticated;
+
+drop policy if exists "Anyone can read shared state" on public.app_state;
+drop policy if exists "Anyone can insert shared state" on public.app_state;
+drop policy if exists "Anyone can update shared state" on public.app_state;
+
+create policy "Anyone can read shared state"
 on public.app_state for select
-to authenticated
-using ((select auth.uid()) = user_id);
+to anon, authenticated
+using (true);
 
-create policy "Users can insert their own app state"
+create policy "Anyone can insert shared state"
 on public.app_state for insert
-to authenticated
-with check ((select auth.uid()) = user_id);
+to anon, authenticated
+with check (true);
 
-create policy "Users can update their own app state"
+create policy "Anyone can update shared state"
 on public.app_state for update
-to authenticated
-using ((select auth.uid()) = user_id)
-with check ((select auth.uid()) = user_id);
+to anon, authenticated
+using (true)
+with check (true);
+
+insert into public.app_state (id, state)
+values ('shared', '{}'::jsonb)
+on conflict (id) do nothing;
+
+-- Live updates across devices (Realtime)
+do $$
+begin
+  alter publication supabase_realtime add table public.app_state;
+exception
+  when duplicate_object then null;
+end $$;

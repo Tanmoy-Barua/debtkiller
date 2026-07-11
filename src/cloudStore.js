@@ -2,15 +2,18 @@ import { createClient } from "@supabase/supabase-js";
 
 const STORE_KEY = "debt-destroyer:v2";
 const LEGACY_KEY = "debt-destroyer:v1";
+const SHARED_ID = import.meta.env.VITE_APP_STATE_ID || "shared";
 const url = import.meta.env.VITE_SUPABASE_URL;
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const anonKey =
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-export const cloudEnabled = Boolean(url && anonKey);
+export const cloudEnabled = Boolean(url && anonKey && !url.includes("YOUR_PROJECT"));
 const supabase = cloudEnabled
   ? createClient(url, anonKey, {
       auth: {
-        persistSession: true,
-        autoRefreshToken: true,
+        persistSession: false,
+        autoRefreshToken: false,
         detectSessionInUrl: false,
       },
     })
@@ -36,14 +39,26 @@ function saveLocal(state) {
   }
 }
 
-async function getAnonymousUser() {
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError) throw sessionError;
-  if (sessionData.session?.user) return sessionData.session.user;
-
-  const { data, error } = await supabase.auth.signInAnonymously();
+async function fetchCloudState() {
+  const { data, error } = await supabase
+    .from("app_state")
+    .select("state, updated_at")
+    .eq("id", SHARED_ID)
+    .maybeSingle();
   if (error) throw error;
-  return data.user;
+  return data;
+}
+
+async function saveCloud(state) {
+  const { error } = await supabase.from("app_state").upsert(
+    {
+      id: SHARED_ID,
+      state,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "id" }
+  );
+  if (error) throw error;
 }
 
 export async function loadAppState() {
@@ -51,21 +66,14 @@ export async function loadAppState() {
   if (!cloudEnabled) return { state: localState, source: localState ? "local" : "empty" };
 
   try {
-    const user = await getAnonymousUser();
-    const { data, error } = await supabase
-      .from("app_state")
-      .select("state, updated_at")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (error) throw error;
-    if (data?.state) {
+    const data = await fetchCloudState();
+    if (data?.state && typeof data.state === "object") {
       saveLocal(data.state);
       return { state: data.state, source: "cloud" };
     }
 
     if (localState) {
-      await saveCloud(user.id, localState);
+      await saveCloud(localState);
       return { state: localState, source: "local" };
     }
 
@@ -76,28 +84,44 @@ export async function loadAppState() {
   }
 }
 
-async function saveCloud(userId, state) {
-  const { error } = await supabase.from("app_state").upsert(
-    {
-      user_id: userId,
-      state,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id" }
-  );
-  if (error) throw error;
-}
-
 export async function saveAppState(state) {
   const local = saveLocal(state);
   if (!cloudEnabled) return { local, cloud: false };
 
   try {
-    const user = await getAnonymousUser();
-    await saveCloud(user.id, state);
+    await saveCloud(state);
     return { local, cloud: true };
   } catch (error) {
     console.warn("Cloud save failed; local backup remains available", error);
     return { local, cloud: false, error };
   }
+}
+
+/** Subscribe to live updates from other devices/browsers. Returns an unsubscribe fn. */
+export function subscribeAppState(onChange) {
+  if (!cloudEnabled || !supabase) return () => {};
+
+  const channel = supabase
+    .channel(`app_state:${SHARED_ID}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "app_state",
+        filter: `id=eq.${SHARED_ID}`,
+      },
+      (payload) => {
+        const next = payload.new?.state;
+        if (next && typeof next === "object") {
+          saveLocal(next);
+          onChange(next);
+        }
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
 }

@@ -9,7 +9,7 @@ import {
   LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine
 } from "recharts";
-import { cloudEnabled, loadAppState, saveAppState } from "./cloudStore.js";
+import { cloudEnabled, loadAppState, saveAppState, subscribeAppState } from "./cloudStore.js";
 
 /* ------------------------------------------------------------------ */
 /*  Palette — "cockpit at night". Custom hexes via inline styles       */
@@ -148,6 +148,17 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [syncStatus, setSyncStatus] = useState(cloudEnabled ? "connecting" : "local");
   const toastTimer = useRef(null);
+  const saveTimer = useRef(null);
+  const applyingRemote = useRef(false);
+
+  const applyState = (s) => {
+    if (!s || typeof s !== "object") return;
+    if (s.debts) setDebts(s.debts);
+    if (s.earnings) setEarnings(s.earnings);
+    if (s.expenses) setExpenses(s.expenses);
+    if (s.settings) setSettings({ ...DEFAULT_SETTINGS, ...s.settings });
+    if (typeof s.buffer === "number") setBuffer(s.buffer);
+  };
 
   /* ---- inject fonts once ---- */
   useEffect(() => {
@@ -166,13 +177,7 @@ export default function App() {
     (async () => {
       try {
         const { state: s, source } = await loadAppState();
-        if (s) {
-          if (s.debts) setDebts(s.debts);
-          if (s.earnings) setEarnings(s.earnings);
-          if (s.expenses) setExpenses(s.expenses);
-          if (s.settings) setSettings({ ...DEFAULT_SETTINGS, ...s.settings });
-          if (typeof s.buffer === "number") setBuffer(s.buffer);
-        }
+        if (s) applyState(s);
         setSyncStatus(source === "cloud" ? "synced" : cloudEnabled ? "ready" : "local");
       } catch (error) {
         console.error(error);
@@ -183,10 +188,23 @@ export default function App() {
     })();
   }, []);
 
+  /* ---- live cloud updates (other devices / tabs) ---- */
+  useEffect(() => {
+    if (!loaded || !cloudEnabled) return undefined;
+    return subscribeAppState((remote) => {
+      applyingRemote.current = true;
+      applyState(remote);
+      setSyncStatus("synced");
+    });
+  }, [loaded]);
+
   /* ---- autosave (debounced) whole snapshot into one key ---- */
-  const saveTimer = useRef(null);
   useEffect(() => {
     if (!loaded) return;
+    if (applyingRemote.current) {
+      applyingRemote.current = false;
+      return;
+    }
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setSyncStatus(cloudEnabled ? "saving" : "local");
     saveTimer.current = setTimeout(async () => {
@@ -1330,7 +1348,7 @@ function SettingsView({ settings, setSettings, onExport, onImportClick, onReset 
       <SectionHeading>Backup</SectionHeading>
       <section style={card}>
         <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginBottom: 11, lineHeight: 1.5 }}>
-          Your data saves automatically on this device. Export a JSON file to keep a portable backup or move to another device.
+          Data syncs to the shared cloud database automatically (no login). Export a JSON file anytime for an extra backup.
         </div>
         <div style={{ display: "flex", gap: 9 }}>
           <button onClick={onExport} style={{ ...btnPrimary, flex: 1 }}><Download size={15} /> Export JSON</button>
