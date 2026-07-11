@@ -128,35 +128,9 @@ const daysBetween = (aISO, bISO) =>
 const uid = () => Date.now() + Math.floor(Math.random() * 1000);
 
 /* ------------------------------------------------------------------ */
-/*  Persistent storage (the "database"). Falls back to memory-only.   */
+/*  Persistence is handled by cloudStore.js. It always keeps a local  */
+/*  backup and syncs to Supabase when cloud environment variables exist. */
 /* ------------------------------------------------------------------ */
-const STORE_KEY = "debt-destroyer:v1";
-async function dbLoad() {
-  if (typeof window === "undefined") return null;
-  try {
-    if (window.storage) {
-      const r = await window.storage.get(STORE_KEY);
-      if (r?.value) return JSON.parse(r.value);
-    }
-    const local = window.localStorage?.getItem(STORE_KEY);
-    return local ? JSON.parse(local) : null;
-  } catch (e) {
-    console.warn("Load failed; starting fresh:", e);
-    return null;
-  }
-}
-async function dbSave(state) {
-  if (typeof window === "undefined") return false;
-  const payload = JSON.stringify(state);
-  try {
-    if (window.storage) await window.storage.set(STORE_KEY, payload);
-    if (window.localStorage) window.localStorage.setItem(STORE_KEY, payload);
-    return true;
-  } catch (e) {
-    console.error("Save failed:", e);
-    return false;
-  }
-}
 
 /* ================================================================== */
 /*  APP                                                                */
@@ -171,6 +145,7 @@ export default function App() {
   const [buffer, setBuffer] = useState(0);
   const [celebrate, setCelebrate] = useState(null);
   const [toast, setToast] = useState(null);
+  const [syncStatus, setSyncStatus] = useState(cloudEnabled ? "connecting" : "local");
   const toastTimer = useRef(null);
 
   /* ---- inject fonts once ---- */
@@ -188,15 +163,22 @@ export default function App() {
   /* ---- load once ---- */
   useEffect(() => {
     (async () => {
-      const s = await dbLoad();
-      if (s) {
-        if (s.debts) setDebts(s.debts);
-        if (s.earnings) setEarnings(s.earnings);
-        if (s.expenses) setExpenses(s.expenses);
-        if (s.settings) setSettings({ ...DEFAULT_SETTINGS, ...s.settings });
-        if (typeof s.buffer === "number") setBuffer(s.buffer);
+      try {
+        const { state: s, source } = await loadAppState();
+        if (s) {
+          if (s.debts) setDebts(s.debts);
+          if (s.earnings) setEarnings(s.earnings);
+          if (s.expenses) setExpenses(s.expenses);
+          if (s.settings) setSettings({ ...DEFAULT_SETTINGS, ...s.settings });
+          if (typeof s.buffer === "number") setBuffer(s.buffer);
+        }
+        setSyncStatus(source === "cloud" ? "synced" : cloudEnabled ? "ready" : "local");
+      } catch (error) {
+        console.error(error);
+        setSyncStatus("error");
+      } finally {
+        setLoaded(true);
       }
-      setLoaded(true);
     })();
   }, []);
 
@@ -205,9 +187,11 @@ export default function App() {
   useEffect(() => {
     if (!loaded) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      dbSave({ debts, earnings, expenses, settings, buffer });
-    }, 500);
+    setSyncStatus(cloudEnabled ? "saving" : "local");
+    saveTimer.current = setTimeout(async () => {
+      const result = await saveAppState({ debts, earnings, expenses, settings, buffer });
+      setSyncStatus(result.cloud ? "synced" : cloudEnabled ? "error" : "local");
+    }, 700);
     return () => saveTimer.current && clearTimeout(saveTimer.current);
   }, [debts, earnings, expenses, settings, buffer, loaded]);
 
@@ -507,6 +491,9 @@ export default function App() {
               <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint }}>PLAN</div>
               <div style={{ fontFamily: FONT_DISP, fontWeight: 600, fontSize: 13, color: C.lane }}>
                 {settings.activePlan} · {plan.label}
+              </div>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 9.5, marginTop: 4, color: syncStatus === "synced" ? C.green : syncStatus === "error" ? C.red : C.faint }}>
+                {syncStatus === "synced" ? "● CLOUD SAVED" : syncStatus === "saving" ? "● SAVING…" : syncStatus === "connecting" ? "● CONNECTING…" : syncStatus === "error" ? "● LOCAL BACKUP" : "● LOCAL ONLY"}
               </div>
             </div>
           </div>
