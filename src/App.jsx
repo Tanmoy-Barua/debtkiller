@@ -9,7 +9,7 @@ import {
   LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine
 } from "recharts";
-import { cloudEnabled, loadAppState, saveAppState, subscribeAppState } from "./cloudStore.js";
+import { cloudEnabled, loadAppState, saveAppState, subscribeAppState, getSession, onAuthChange, signIn, signOut } from "./cloudStore.js";
 
 /* ------------------------------------------------------------------ */
 /*  Palette — "cockpit at night". Custom hexes via inline styles       */
@@ -137,6 +137,8 @@ const uid = () => Date.now() + Math.floor(Math.random() * 1000);
 /*  APP                                                                */
 /* ================================================================== */
 export default function App() {
+  const [authReady, setAuthReady] = useState(false);
+  const [session, setSession] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState("home");
   const [debts, setDebts] = useState(seedDebts);
@@ -183,35 +185,80 @@ export default function App() {
     }
   }, []);
 
-  /* ---- load once ---- */
+  /* ---- auth bootstrap ---- */
   useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        if (!cloudEnabled) {
+          if (active) {
+            setSession({ local: true });
+            setAuthReady(true);
+          }
+          return;
+        }
+        const current = await getSession();
+        if (active) {
+          setSession(current);
+          setAuthReady(true);
+        }
+      } catch (error) {
+        console.error(error);
+        if (active) {
+          setSession(null);
+          setAuthReady(true);
+        }
+      }
+    })();
+    const unsub = onAuthChange((next) => {
+      setSession(next);
+      if (!next) {
+        setLoaded(false);
+        setSyncStatus("connecting");
+      }
+    });
+    return () => {
+      active = false;
+      unsub();
+    };
+  }, []);
+
+  /* ---- load once after login ---- */
+  useEffect(() => {
+    if (!authReady || !session) return undefined;
+    let active = true;
+    setLoaded(false);
     (async () => {
       try {
         const { state: s, source } = await loadAppState();
+        if (!active) return;
         if (s) applyState(s);
         setSyncStatus(source === "cloud" ? "synced" : cloudEnabled ? "ready" : "local");
       } catch (error) {
         console.error(error);
-        setSyncStatus("error");
+        if (active) setSyncStatus("error");
       } finally {
-        setLoaded(true);
+        if (active) setLoaded(true);
       }
     })();
-  }, []);
+    return () => {
+      active = false;
+    };
+  }, [authReady, session?.user?.id || session?.local]);
 
   /* ---- live cloud updates (other devices / tabs) ---- */
   useEffect(() => {
-    if (!loaded || !cloudEnabled) return undefined;
+    if (!loaded || !cloudEnabled || !session?.user) return undefined;
     return subscribeAppState((remote) => {
       applyingRemote.current = true;
       applyState(remote);
       setSyncStatus("synced");
     });
-  }, [loaded]);
+  }, [loaded, session?.user?.id]);
 
   /* ---- autosave (debounced) whole snapshot into one key ---- */
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || !session) return;
     if (applyingRemote.current) {
       applyingRemote.current = false;
       return;
@@ -223,13 +270,36 @@ export default function App() {
       setSyncStatus(result.cloud ? "synced" : cloudEnabled ? "error" : "local");
     }, 700);
     return () => saveTimer.current && clearTimeout(saveTimer.current);
-  }, [debts, earnings, expenses, settings, buffer, loaded]);
+  }, [debts, earnings, expenses, settings, buffer, loaded, session?.user?.id || session?.local]);
 
   const flash = (msg) => {
     setToast(msg);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 2200);
   };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      setSession(null);
+      setLoaded(false);
+      flash("Signed out");
+    } catch (error) {
+      flash(error.message || "Could not sign out");
+    }
+  };
+
+  if (!authReady) {
+    return (
+      <div style={{ ...page, display: "flex", alignItems: "center", justifyContent: "center", height: "100vh" }}>
+        <div style={{ color: C.muted, fontFamily: FONT_MONO }}>Securing your vault…</div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <LoginScreen onSignedIn={setSession} />;
+  }
 
   /* ---------------- derived numbers ---------------- */
   const activeDebts = debts.filter((d) => !d.paid && d.balance > 0.005);
@@ -593,6 +663,8 @@ export default function App() {
             onExport={exportJSON}
             onImportClick={() => importInputRef.current?.click()}
             onReset={resetAll}
+            onSignOut={cloudEnabled ? handleSignOut : null}
+            accountEmail={session?.user?.email || null}
           />
         )}
       </div>
@@ -627,6 +699,137 @@ export default function App() {
 /* ================================================================== */
 /*  Components                                                          */
 /* ================================================================== */
+
+function LoginScreen({ onSignedIn }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [fails, setFails] = useState(0);
+
+  const locked = fails >= 5;
+
+  const submit = async (e) => {
+    e?.preventDefault?.();
+    if (busy || locked) return;
+    setError("");
+    setBusy(true);
+    try {
+      const session = await signIn(email, password);
+      setFails(0);
+      onSignedIn(session);
+    } catch (err) {
+      setFails((n) => n + 1);
+      setError(err.message || "Sign in failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ ...page, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, minHeight: "100vh" }}>
+      <form
+        onSubmit={submit}
+        style={{
+          width: "100%",
+          maxWidth: 400,
+          background: `linear-gradient(165deg, ${C.surface2} 0%, ${C.surface} 70%)`,
+          border: `1px solid ${C.line}`,
+          borderRadius: 18,
+          padding: "28px 22px 22px",
+          boxShadow: "0 24px 60px rgba(0,0,0,.45)",
+          animation: "ddRise .4s ease both",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+          <div style={badgeIcon}><Car size={16} color={C.asphalt} /></div>
+          <div>
+            <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 20, letterSpacing: -0.4 }}>Debt Destroyer</div>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint, letterSpacing: 1.1, marginTop: 2 }}>SECURE ACCESS</div>
+          </div>
+        </div>
+        <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: C.muted, lineHeight: 1.5, margin: "14px 0 18px" }}>
+          Sign in to unlock your live cloud dashboard. Data is blocked without a valid session.
+        </div>
+
+        <Field label="Email">
+          <input
+            type="email"
+            autoComplete="username"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@email.com"
+            style={input}
+            disabled={busy || locked}
+          />
+        </Field>
+        <div style={{ height: 10 }} />
+        <Field label="Password">
+          <div style={{ position: "relative" }}>
+            <input
+              type={showPw ? "text" : "password"}
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••••••"
+              style={{ ...input, paddingRight: 72 }}
+              disabled={busy || locked}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPw((v) => !v)}
+              style={{
+                position: "absolute",
+                right: 8,
+                top: 7,
+                ...btnSm,
+                padding: "6px 8px",
+                fontSize: 10.5,
+              }}
+            >
+              {showPw ? "Hide" : "Show"}
+            </button>
+          </div>
+        </Field>
+
+        {error && (
+          <div
+            style={{
+              marginTop: 12,
+              background: C.redDim,
+              border: `1px solid ${C.red}`,
+              borderRadius: 10,
+              padding: "10px 12px",
+              fontFamily: FONT_MONO,
+              fontSize: 11.5,
+              color: C.text,
+            }}
+          >
+            {locked ? "Too many failed attempts. Refresh and try again later." : error}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={busy || locked}
+          style={{
+            ...btnPrimary,
+            width: "100%",
+            marginTop: 16,
+            opacity: busy || locked ? 0.65 : 1,
+          }}
+        >
+          <Shield size={15} /> {busy ? "Checking…" : "Unlock dashboard"}
+        </button>
+
+        <div style={{ marginTop: 14, fontFamily: FONT_MONO, fontSize: 10, color: C.faint, lineHeight: 1.5, textAlign: "center" }}>
+          Protected by Supabase Auth · hashed passwords · rate-limited · DB locked to signed-in users
+        </div>
+      </form>
+    </div>
+  );
+}
 
 function AlertsBanner({ alerts }) {
   return (
@@ -1423,7 +1626,7 @@ function ChartsView({ earningsData, debtData, curMonth, baseDaily }) {
 }
 
 /* ---------- Settings ---------- */
-function SettingsView({ settings, setSettings, onExport, onImportClick, onReset }) {
+function SettingsView({ settings, setSettings, onExport, onImportClick, onReset, onSignOut, accountEmail }) {
   const [confirmReset, setConfirmReset] = useState(false);
   const set = (k, v) => setSettings((s) => ({ ...s, [k]: v }));
   return (
@@ -1455,10 +1658,24 @@ function SettingsView({ settings, setSettings, onExport, onImportClick, onReset 
         <NumberRow label="Emergency buffer goal" hint="Car-repair reserve" value={settings.bufferGoal} onChange={(v) => set("bufferGoal", v)} prefix="$" last />
       </section>
 
+      {onSignOut && (
+        <>
+          <SectionHeading>Account</SectionHeading>
+          <section style={card}>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginBottom: 11, lineHeight: 1.5 }}>
+              Signed in as <span style={{ color: C.text }}>{accountEmail || "owner"}</span>. Cloud data stays locked without this login.
+            </div>
+            <button onClick={onSignOut} style={{ ...btnGhost, width: "100%", color: C.amber, borderColor: C.amberDim }}>
+              Sign out
+            </button>
+          </section>
+        </>
+      )}
+
       <SectionHeading>Backup</SectionHeading>
       <section style={card}>
         <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginBottom: 11, lineHeight: 1.5 }}>
-          Data syncs to the shared cloud database automatically (no login). Export a JSON file anytime for an extra backup.
+          Cloud sync requires login. Export a JSON file anytime for an extra backup.
         </div>
         <div style={{ display: "flex", gap: 9 }}>
           <button onClick={onExport} style={{ ...btnPrimary, flex: 1 }}><Download size={15} /> Export JSON</button>

@@ -12,9 +12,10 @@ export const cloudEnabled = Boolean(url && anonKey && !url.includes("YOUR_PROJEC
 const supabase = cloudEnabled
   ? createClient(url, anonKey, {
       auth: {
-        persistSession: false,
-        autoRefreshToken: false,
+        persistSession: true,
+        autoRefreshToken: true,
         detectSessionInUrl: false,
+        storage: typeof window !== "undefined" ? window.localStorage : undefined,
       },
     })
   : null;
@@ -37,6 +38,51 @@ function saveLocal(state) {
     console.warn("Local backup could not be saved", error);
     return false;
   }
+}
+
+export async function getSession() {
+  if (!cloudEnabled || !supabase) return null;
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  return data.session ?? null;
+}
+
+export function onAuthChange(callback) {
+  if (!cloudEnabled || !supabase) return () => {};
+  const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    callback(session);
+  });
+  return () => data.subscription.unsubscribe();
+}
+
+export async function signIn(email, password) {
+  if (!cloudEnabled || !supabase) throw new Error("Cloud auth is not configured");
+  const cleanEmail = String(email || "").trim().toLowerCase();
+  const cleanPassword = String(password || "");
+  if (!cleanEmail || !cleanPassword) throw new Error("Enter email and password");
+  if (cleanPassword.length < 12) throw new Error("Password must be at least 12 characters");
+
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: cleanEmail,
+    password: cleanPassword,
+  });
+  if (error) {
+    const msg = (error.message || "").toLowerCase();
+    if (msg.includes("invalid login") || msg.includes("invalid credentials")) {
+      throw new Error("Wrong email or password");
+    }
+    if (msg.includes("rate") || msg.includes("too many")) {
+      throw new Error("Too many attempts. Wait a minute and try again.");
+    }
+    throw new Error(error.message || "Sign in failed");
+  }
+  return data.session;
+}
+
+export async function signOut() {
+  if (!cloudEnabled || !supabase) return;
+  const { error } = await supabase.auth.signOut();
+  if (error) throw error;
 }
 
 async function fetchCloudState() {
@@ -65,6 +111,9 @@ export async function loadAppState() {
   const localState = loadLocal();
   if (!cloudEnabled) return { state: localState, source: localState ? "local" : "empty" };
 
+  const session = await getSession();
+  if (!session) return { state: null, source: "auth-required" };
+
   try {
     const data = await fetchCloudState();
     if (data?.state && typeof data.state === "object") {
@@ -87,6 +136,9 @@ export async function loadAppState() {
 export async function saveAppState(state) {
   const local = saveLocal(state);
   if (!cloudEnabled) return { local, cloud: false };
+
+  const session = await getSession();
+  if (!session) return { local, cloud: false, error: new Error("Not signed in") };
 
   try {
     await saveCloud(state);
