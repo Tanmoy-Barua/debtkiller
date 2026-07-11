@@ -152,12 +152,23 @@ export default function App() {
   const toastTimer = useRef(null);
   const saveTimer = useRef(null);
   const applyingRemote = useRef(false);
+  const importInputRef = useRef(null);
 
   const applyState = (s) => {
     if (!s || typeof s !== "object") return;
-    if (s.debts) setDebts(s.debts);
-    if (s.earnings) setEarnings(s.earnings);
-    if (s.expenses) setExpenses(s.expenses);
+    if (Array.isArray(s.debts)) {
+      setDebts(
+        s.debts.map((d) => ({
+          ...d,
+          balance: asMoney(d.balance),
+          originalBalance: asMoney(d.originalBalance ?? d.balance),
+          payments: Array.isArray(d.payments) ? d.payments : [],
+          paid: Boolean(d.paid) || asMoney(d.balance) <= 0.005,
+        }))
+      );
+    }
+    if (Array.isArray(s.earnings)) setEarnings(s.earnings);
+    if (Array.isArray(s.expenses)) setExpenses(s.expenses);
     if (s.settings) setSettings({ ...DEFAULT_SETTINGS, ...s.settings });
     if (typeof s.buffer === "number") setBuffer(s.buffer);
   };
@@ -289,18 +300,6 @@ export default function App() {
     }
   };
 
-  if (!authReady) {
-    return (
-      <div style={{ ...page, display: "flex", alignItems: "center", justifyContent: "center", height: "100vh" }}>
-        <div style={{ color: C.muted, fontFamily: FONT_MONO }}>Securing your vault…</div>
-      </div>
-    );
-  }
-
-  if (!session) {
-    return <LoginScreen onSignedIn={setSession} />;
-  }
-
   /* ---------------- derived numbers ---------------- */
   const activeDebts = debts.filter((d) => !d.paid && d.balance > 0.005);
   const originalTotal = debts.reduce((s, d) => s + asMoney(d.originalBalance ?? d.balance), 0) || INITIAL_TOTAL;
@@ -309,7 +308,7 @@ export default function App() {
 
   const today = todayISO();
   const curMonth = monthKey(today);
-  const plan = PLANS[settings.activePlan];
+  const plan = PLANS[settings.activePlan] || PLANS.A;
   const planMonth = plan.months[curMonth] || null;
 
   const incomeOf = (e) => (Number(e.gross) || 0) + (Number(e.other) || 0);
@@ -483,7 +482,6 @@ export default function App() {
     URL.revokeObjectURL(url);
     flash("Backup downloaded");
   };
-  const importInputRef = useRef(null);
   const importJSON = (file) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -534,7 +532,7 @@ export default function App() {
 
   const debtChartData = useMemo(() => {
     const pays = [];
-    debts.forEach((d) => d.payments.forEach((p) => pays.push({ date: p.date, amount: p.amount })));
+    debts.forEach((d) => (d.payments || []).forEach((p) => pays.push({ date: p.date, amount: p.amount })));
     pays.sort((a, b) => (a.date < b.date ? -1 : 1));
     const startTotal = debts.reduce((sum, d) => sum + asMoney(d.originalBalance ?? d.balance), 0) || INITIAL_TOTAL;
     const rows = [{ label: AS_OF.slice(5), total: startTotal }];
@@ -545,9 +543,21 @@ export default function App() {
     });
     if (pays.length === 0) rows.push({ label: today.slice(5), total: startTotal });
     return rows;
-  }, [debts]);
+  }, [debts, today]);
 
   /* ---------------- render ---------------- */
+  if (!authReady) {
+    return (
+      <div style={{ ...page, display: "flex", alignItems: "center", justifyContent: "center", height: "100vh" }}>
+        <div style={{ color: C.muted, fontFamily: FONT_MONO }}>Securing your vault…</div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <LoginScreen onSignedIn={setSession} />;
+  }
+
   if (!loaded) {
     return (
       <div style={{ ...page, display: "flex", alignItems: "center", justifyContent: "center", height: "100vh" }}>
