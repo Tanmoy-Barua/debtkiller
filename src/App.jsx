@@ -16,22 +16,22 @@ import { cloudEnabled, loadAppState, saveAppState, subscribeAppState } from "./c
 /*  (artifact Tailwind has no JIT, so arbitrary values won't compile). */
 /* ------------------------------------------------------------------ */
 const C = {
-  asphalt: "#0B0F14",     // page
-  surface: "#141A22",     // cards
-  surface2: "#1B222C",    // raised
-  line: "#26303C",        // hairline
+  asphalt: "#070B10",
+  surface: "#121820",
+  surface2: "#1A222C",
+  line: "#2A3542",
   lineSoft: "#1E2732",
-  text: "#E8EDF2",
+  text: "#F2F5F8",
   muted: "#8A97A6",
   faint: "#5B6875",
-  green: "#34D399",
-  greenDim: "#1E5C46",
-  red: "#F87171",
-  redDim: "#5C2323",
-  amber: "#FBBF24",
-  amberDim: "#5A4410",
-  lane: "#FACC15",        // road lane-marking yellow (signature accent)
-  blue: "#60A5FA",
+  green: "#3DDC97",
+  greenDim: "#164A38",
+  red: "#FF6B6B",
+  redDim: "#4A1F1F",
+  amber: "#F5C451",
+  amberDim: "#4A3A12",
+  lane: "#FFE566",
+  blue: "#6BB0FF",
 };
 
 const FONT_MONO = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace";
@@ -160,16 +160,27 @@ export default function App() {
     if (typeof s.buffer === "number") setBuffer(s.buffer);
   };
 
-  /* ---- inject fonts once ---- */
+  /* ---- inject fonts + motion once ---- */
   useEffect(() => {
     const id = "dd-fonts";
-    if (document.getElementById(id)) return;
-    const l = document.createElement("link");
-    l.id = id;
-    l.rel = "stylesheet";
-    l.href =
-      "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap";
-    document.head.appendChild(l);
+    if (!document.getElementById(id)) {
+      const l = document.createElement("link");
+      l.id = id;
+      l.rel = "stylesheet";
+      l.href =
+        "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap";
+      document.head.appendChild(l);
+    }
+    const motionId = "dd-motion";
+    if (!document.getElementById(motionId)) {
+      const s = document.createElement("style");
+      s.id = motionId;
+      s.textContent = `
+        @keyframes ddRise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes ddLane{0%{background-position:0 0}100%{background-position:36px 0}}
+      `;
+      document.head.appendChild(s);
+    }
   }, []);
 
   /* ---- load once ---- */
@@ -521,6 +532,14 @@ export default function App() {
         {tab === "home" && (
           <>
             {alerts.length > 0 && <AlertsBanner alerts={alerts} />}
+            <DailyTargetCard
+              planMonth={planMonth}
+              earnedToday={earnedToday}
+              baseDaily={baseDaily}
+              adjustedDaily={adjustedDaily}
+              runningSurplus={runningSurplus}
+              daysRemaining={daysRemainingIncl}
+            />
             <Hero
               remaining={remainingDebt}
               originalTotal={originalTotal}
@@ -531,14 +550,6 @@ export default function App() {
               paceDelta={paceDelta}
             />
             <SmartPayoffCard debts={debts} available={availableAfterTaxAndExpenses} buffer={buffer} bufferGoal={settings.bufferGoal} />
-            <DailyTargetCard
-              planMonth={planMonth}
-              earnedToday={earnedToday}
-              baseDaily={baseDaily}
-              adjustedDaily={adjustedDaily}
-              runningSurplus={runningSurplus}
-              daysRemaining={daysRemainingIncl}
-            />
             <MonthlyDashboard
               curMonth={curMonth}
               monthTarget={monthTarget}
@@ -619,7 +630,7 @@ export default function App() {
 
 function AlertsBanner({ alerts }) {
   return (
-    <div style={{ marginBottom: 12 }}>
+    <div style={{ marginBottom: 14 }}>
       {alerts.map(({ d, days }) => {
         const urgent = days <= 7;
         return (
@@ -628,21 +639,37 @@ function AlertsBanner({ alerts }) {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 10,
-              background: urgent ? C.redDim : C.amberDim,
+              gap: 12,
+              background: urgent
+                ? `linear-gradient(135deg, ${C.redDim} 0%, #2A1515 100%)`
+                : `linear-gradient(135deg, ${C.amberDim} 0%, #2A2310 100%)`,
               border: `1px solid ${urgent ? C.red : C.amber}`,
-              borderRadius: 12,
-              padding: "11px 13px",
+              borderRadius: 14,
+              padding: "13px 14px",
               marginBottom: 8,
+              boxShadow: urgent ? "0 8px 24px rgba(255,107,107,.12)" : "0 8px 24px rgba(245,196,81,.08)",
             }}
           >
-            <AlertTriangle size={17} color={urgent ? C.red : C.amber} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: FONT_DISP, fontWeight: 600, fontSize: 13.5, color: C.text }}>
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: urgent ? "rgba(255,107,107,.15)" : "rgba(245,196,81,.15)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <AlertTriangle size={17} color={urgent ? C.red : C.amber} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 14, color: C.text }}>
                 {d.name} due {days <= 0 ? "today" : `in ${days} day${days === 1 ? "" : "s"}`}
               </div>
-              <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted }}>
-                Pay in full · {usd(d.balance)} remaining · {monthLabel(d.deadline)}
+              <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginTop: 2 }}>
+                Pay in full · {usd(d.balance)} · {monthLabel(d.deadline)}
               </div>
             </div>
           </div>
@@ -656,26 +683,33 @@ function Hero({ remaining, originalTotal, pctPaid, debts, projectedFreeISO, plan
   const total = originalTotal;
   const paidPortion = total - remaining;
   return (
-    <section style={{ ...card, padding: "18px 16px 16px", position: "relative", overflow: "hidden" }}>
+    <section
+      style={{
+        ...card,
+        padding: "16px 15px 14px",
+        position: "relative",
+        overflow: "hidden",
+        background: `linear-gradient(165deg, ${C.surface2} 0%, ${C.surface} 70%)`,
+      }}
+    >
       <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, letterSpacing: 1.5, color: C.faint }}>
         DISTANCE REMAINING
       </div>
       <div style={{ display: "flex", alignItems: "flex-end", gap: 10, marginTop: 4 }}>
-        <div style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: 40, letterSpacing: -1.5, color: C.text, lineHeight: 0.95 }}>
+        <div style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: 36, letterSpacing: -1.5, color: C.text, lineHeight: 0.95 }}>
           {usd0(remaining)}
         </div>
-        <div style={{ marginBottom: 6 }}>
-          <span style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 15, color: C.green }}>
+        <div style={{ marginBottom: 5 }}>
+          <span style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 14, color: C.green }}>
             {pctPaid.toFixed(1)}%
           </span>
           <span style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint, marginLeft: 5 }}>paid</span>
         </div>
       </div>
 
-      {/* signature: the road */}
       <Road pct={pctPaid} />
 
-      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
         <div style={miniStat}>
           <div style={miniLabel}>PAID SO FAR</div>
           <div style={{ ...miniVal, color: C.green }}>{usd0(paidPortion)}</div>
@@ -739,7 +773,9 @@ function Road({ pct }) {
             height: 2,
             transform: "translateY(-50%)",
             backgroundImage: `repeating-linear-gradient(90deg, ${C.lane} 0 9px, transparent 9px 18px)`,
+            backgroundSize: "36px 2px",
             opacity: 0.55,
+            animation: "ddLane 1.1s linear infinite",
           }}
         />
       </div>
@@ -807,45 +843,119 @@ function DailyTargetCard({ planMonth, earnedToday, baseDaily, adjustedDaily, run
       </section>
     );
   }
-  const hit = earnedToday >= adjustedDaily;
+  const hit = earnedToday >= adjustedDaily && adjustedDaily > 0;
   const ahead = runningSurplus >= 0;
+  const pct = adjustedDaily > 0 ? Math.min(100, (earnedToday / adjustedDaily) * 100) : 0;
+  const remaining = Math.max(0, adjustedDaily - earnedToday);
   return (
-    <section style={card}>
+    <section
+      style={{
+        ...card,
+        padding: "18px 16px 16px",
+        borderColor: hit ? C.green : C.lane,
+        background: hit
+          ? `radial-gradient(120% 90% at 100% 0%, ${C.greenDim} 0%, ${C.surface} 55%)`
+          : `radial-gradient(120% 90% at 100% 0%, rgba(255,229,102,.14) 0%, ${C.surface} 55%)`,
+        boxShadow: hit
+          ? "0 12px 36px rgba(61,220,151,.12)"
+          : "0 12px 36px rgba(255,229,102,.10)",
+        animation: "ddRise .45s ease both",
+      }}
+    >
       <div style={rowBetween}>
-        <SectionLabel icon={Gauge}>TODAY'S TARGET</SectionLabel>
-        <span style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint }}>{daysRemaining} days left this month</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: 8,
+              background: hit ? C.green : C.lane,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Gauge size={14} color={C.asphalt} />
+          </div>
+          <div>
+            <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 15, color: C.text, letterSpacing: -0.2 }}>
+              Today's target
+            </div>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint, marginTop: 1 }}>
+              {daysRemaining} days left · base {usd0(baseDaily)}
+            </div>
+          </div>
+        </div>
+        <div
+          style={{
+            fontFamily: FONT_MONO,
+            fontWeight: 700,
+            fontSize: 10,
+            letterSpacing: 0.6,
+            color: hit ? C.green : ahead ? C.lane : C.red,
+            background: hit ? C.greenDim : ahead ? C.amberDim : C.redDim,
+            border: `1px solid ${hit ? C.green : ahead ? C.lane : C.red}`,
+            borderRadius: 999,
+            padding: "5px 9px",
+          }}
+        >
+          {hit ? "HIT" : ahead ? "ON PACE" : "CATCH UP"}
+        </div>
       </div>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 14, marginTop: 8 }}>
+
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginTop: 14 }}>
         <div>
-          <div style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: 30, color: hit ? C.green : C.text, letterSpacing: -1 }}>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.2, color: C.faint }}>AIM FOR</div>
+          <div
+            style={{
+              fontFamily: FONT_MONO,
+              fontWeight: 700,
+              fontSize: 42,
+              letterSpacing: -1.8,
+              color: hit ? C.green : C.text,
+              lineHeight: 0.95,
+              marginTop: 4,
+            }}
+          >
             {usd0(adjustedDaily)}
           </div>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint, marginTop: 2 }}>
-            adjusted · base was {usd0(baseDaily)}
-          </div>
         </div>
-        <div style={{ marginLeft: "auto", textAlign: "right" }}>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint }}>EARNED TODAY</div>
-          <div style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: 20, color: hit ? C.green : C.text }}>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.2, color: C.faint }}>EARNED</div>
+          <div
+            style={{
+              fontFamily: FONT_MONO,
+              fontWeight: 700,
+              fontSize: 26,
+              letterSpacing: -1,
+              color: hit ? C.green : C.lane,
+              marginTop: 4,
+            }}
+          >
             {usd0(earnedToday)}
+          </div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.muted, marginTop: 3 }}>
+            {hit ? "Target cleared" : `${usd0(remaining)} to go`}
           </div>
         </div>
       </div>
-      <div
-        style={{
-          marginTop: 12,
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          background: ahead ? C.greenDim : C.redDim,
-          border: `1px solid ${ahead ? C.green : C.red}`,
-          borderRadius: 9,
-          padding: "8px 11px",
-        }}
-      >
-        {ahead ? <Zap size={15} color={C.green} /> : <TrendingUp size={15} color={C.red} />}
-        <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: C.text }}>
-          {ahead ? "Ahead of pace by" : "Behind pace by"} {usd0(Math.abs(runningSurplus))} this month
+
+      <div style={{ ...progTrack, height: 10, marginTop: 16, borderRadius: 8 }}>
+        <div
+          style={{
+            ...progFill,
+            width: `${pct}%`,
+            background: hit
+              ? `linear-gradient(90deg, ${C.greenDim}, ${C.green})`
+              : `linear-gradient(90deg, #8A7010, ${C.lane})`,
+            boxShadow: hit ? `0 0 12px ${C.green}` : `0 0 12px rgba(255,229,102,.35)`,
+          }}
+        />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 7 }}>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint }}>{pct.toFixed(0)}% of today</span>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: ahead ? C.green : C.red }}>
+          {ahead ? "▲" : "▼"} {usd0(Math.abs(runningSurplus))} month pace
         </span>
       </div>
     </section>
@@ -1502,7 +1612,11 @@ function Confetti() {
 /*  Styles                                                             */
 /* ================================================================== */
 const page = {
-  background: C.asphalt,
+  background: `
+    radial-gradient(900px 420px at 50% -10%, rgba(255,229,102,.09), transparent 55%),
+    radial-gradient(700px 360px at 100% 20%, rgba(61,220,151,.05), transparent 50%),
+    linear-gradient(180deg, #0A1018 0%, ${C.asphalt} 40%, #06090D 100%)
+  `,
   minHeight: "100vh",
   color: C.text,
   fontFamily: FONT_BODY,
@@ -1511,7 +1625,7 @@ const page = {
 const card = {
   background: C.surface,
   border: `1px solid ${C.line}`,
-  borderRadius: 14,
+  borderRadius: 16,
   padding: "14px 15px",
   marginBottom: 12,
 };
