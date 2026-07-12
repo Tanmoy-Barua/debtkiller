@@ -329,24 +329,47 @@ export default function App() {
   const daysElapsed = dayNow;
   const daysRemainingIncl = dim - dayNow + 1;
 
-  const monthTarget = planMonth ? planMonth.target : 0;
-  const baseDaily = planMonth ? planMonth.daily : 0;
-  const remainingMonthTarget = Math.max(0, monthTarget - earnedThisMonth);
-  const adjustedDaily = planMonth ? remainingMonthTarget / daysRemainingIncl : 0;
-  const runningSurplus = earnedThisMonth - baseDaily * daysElapsed;
-  const dailyAvgMonth = daysElapsed > 0 ? earnedThisMonth / daysElapsed : 0;
-  const projectedMonthEnd = dailyAvgMonth * dim;
-
   /* today's logged income */
   const earnedToday = earnings
     .filter((e) => e.date === today)
     .reduce((s, e) => s + incomeOf(e), 0);
+
+  const monthTarget = planMonth ? planMonth.target : 0;
+  const baseDaily = planMonth ? planMonth.daily : 0;
+  const remainingMonthTarget = Math.max(0, monthTarget - earnedThisMonth);
+  // Missed earlier days → leftover target is split evenly across remaining days (incl. today)
+  const adjustedDaily = planMonth ? remainingMonthTarget / daysRemainingIncl : 0;
+  const pastDays = Math.max(0, dayNow - 1);
+  const earnedBeforeToday = Math.max(0, earnedThisMonth - earnedToday);
+  const expectedBeforeToday = baseDaily * pastDays;
+  const pastShortfall = Math.max(0, expectedBeforeToday - earnedBeforeToday);
+  const dailyCatchUpBump = daysRemainingIncl > 0 ? pastShortfall / daysRemainingIncl : 0;
+  const runningSurplus = earnedThisMonth - baseDaily * daysElapsed;
+  const dailyAvgMonth = daysElapsed > 0 ? earnedThisMonth / daysElapsed : 0;
+  const projectedMonthEnd = dailyAvgMonth * dim;
 
   /* overall pace for debt-free projection */
   const loggedDays = new Set(earnings.map((e) => e.date)).size;
   const overallDailyAvg = loggedDays > 0 ? totalIncome / loggedDays : baseDaily;
   const expenseDailyAvg = loggedDays > 0 ? totalExpenses / loggedDays : settings.monthlyBaseline / 30.44;
   const monthlyCapacity = Math.max(0, (overallDailyAvg * (1 - settings.taxRate) - expenseDailyAvg) * 30.44);
+
+  const debtPaidThisMonth = debts.reduce(
+    (sum, d) =>
+      sum +
+      (d.payments || [])
+        .filter((p) => monthKey(p.date) === curMonth)
+        .reduce((s, p) => s + asMoney(p.amount), 0),
+    0
+  );
+  const monthlyMins = activeDebts.reduce((sum, d) => sum + asMoney(d.min), 0);
+  const projectedGrossMonth = Math.max(projectedMonthEnd, earnedThisMonth + adjustedDaily * Math.max(0, daysRemainingIncl - 1));
+  const projectedTaxMonth = projectedGrossMonth * settings.taxRate;
+  const projectedSpendMonth = Math.max(spentThisMonth, (spentThisMonth / Math.max(1, daysElapsed)) * dim);
+  const projectedAfterExpenses = Math.max(0, projectedGrossMonth - projectedTaxMonth - projectedSpendMonth);
+  const projectedAfterLoans = Math.max(0, projectedAfterExpenses - monthlyMins);
+  const leftoverForExtraDebt = Math.max(0, projectedAfterLoans - Math.max(0, settings.bufferGoal - buffer));
+
   let projectedFreeISO = plan.freeDate;
   let paceDelta = null; // days ahead(+)/behind(-) vs plan
   if (remainingDebt <= 0.005) {
@@ -378,6 +401,25 @@ export default function App() {
     if (value <= 0) return flash("Enter an expense amount");
     setExpenses((p) => [{ id: uid(), date: date || today, amount: value, category: category || "Other", note: (note || "").trim() }, ...p]);
     flash("Expense logged");
+  };
+  const updateExpense = (id, changes) => {
+    const value = asMoney(changes.amount);
+    if (value <= 0) return flash("Enter an expense amount");
+    setExpenses((p) =>
+      p.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              date: changes.date || e.date,
+              amount: value,
+              category: changes.category || e.category || "Other",
+              note: (changes.note || "").trim(),
+            }
+          : e
+      )
+    );
+    flash("Expense updated");
+    return true;
   };
   const removeEntry = (kind, id) => {
     if (kind === "earn") setEarnings((p) => p.filter((e) => e.id !== id));
@@ -619,6 +661,8 @@ export default function App() {
               adjustedDaily={adjustedDaily}
               runningSurplus={runningSurplus}
               daysRemaining={daysRemainingIncl}
+              pastShortfall={pastShortfall}
+              dailyCatchUpBump={dailyCatchUpBump}
             />
             <Hero
               remaining={remainingDebt}
@@ -629,7 +673,23 @@ export default function App() {
               planFreeISO={plan.freeDate}
               paceDelta={paceDelta}
             />
-            <SmartPayoffCard debts={debts} available={availableAfterTaxAndExpenses} buffer={buffer} bufferGoal={settings.bufferGoal} />
+            <SmartPayoffCard
+              debts={debts}
+              today={today}
+              available={availableAfterTaxAndExpenses}
+              buffer={buffer}
+              bufferGoal={settings.bufferGoal}
+              leftoverForExtraDebt={leftoverForExtraDebt}
+            />
+            <NetProjectionCard
+              projectedGross={projectedGrossMonth}
+              projectedTax={projectedTaxMonth}
+              projectedSpend={projectedSpendMonth}
+              debtPaidThisMonth={debtPaidThisMonth}
+              monthlyMins={monthlyMins}
+              projectedAfterLoans={projectedAfterLoans}
+              leftoverForExtraDebt={leftoverForExtraDebt}
+            />
             <MonthlyDashboard
               curMonth={curMonth}
               monthTarget={monthTarget}
@@ -658,6 +718,7 @@ export default function App() {
             expenses={expenses}
             onEarn={addEarning}
             onExpense={addExpense}
+            onUpdateExpense={updateExpense}
             onRemove={removeEntry}
           />
         )}
@@ -1012,41 +1073,144 @@ function Road({ pct }) {
 }
 
 
-function SmartPayoffCard({ debts, available, buffer, bufferGoal }) {
+function rankDebtsToKill(debts, todayISODate) {
   const active = debts.filter((d) => !d.paid && asMoney(d.balance) > 0.005);
-  if (!active.length) return null;
-  const ranked = [...active].sort((a, b) => {
-    const aUrgent = a.deadline ? parseISO(a.deadline).getTime() : Infinity;
-    const bUrgent = b.deadline ? parseISO(b.deadline).getTime() : Infinity;
-    if (aUrgent !== bUrgent) return aUrgent - bUrgent;
-    if (a.group !== b.group) return a.group === "card" ? -1 : b.group === "card" ? 1 : 0;
-    return a.balance - b.balance;
-  });
-  const next = ranked[0];
+  return active
+    .map((d) => {
+      const reasons = [];
+      let score = 0;
+      const bal = asMoney(d.balance);
+      if (d.deadline) {
+        const days = daysBetween(todayISODate, d.deadline);
+        if (days <= 0) {
+          score += 1000;
+          reasons.push("Due today — pay first");
+        } else if (days <= 7) {
+          score += 850 - days * 25;
+          reasons.push(`Hard deadline in ${days} day${days === 1 ? "" : "s"}`);
+        } else if (days <= 21) {
+          score += 420 - days * 5;
+          reasons.push(`Deadline in ${days} days`);
+        }
+      }
+      if (d.group === "card") {
+        score += 140;
+        reasons.push("Interest-bearing card (costliest to keep)");
+      } else if (d.group === "loan") {
+        score += 70;
+        if (d.min) reasons.push(`Fixed loan · min ${usd0(d.min)}/mo`);
+        else reasons.push("Fixed installment loan");
+      } else {
+        score += 20;
+        reasons.push("Personal debt");
+      }
+      if (bal > 0 && bal <= 400) {
+        score += 110;
+        reasons.push("Small balance — quick kill");
+      } else if (bal <= 900) {
+        score += 55;
+        reasons.push("Manageable balance for a fast win");
+      }
+      if (!reasons.length) reasons.push("Next in payoff queue");
+      return { d, score, reasons: reasons.slice(0, 2) };
+    })
+    .sort((a, b) => b.score - a.score || a.d.balance - b.d.balance);
+}
+
+function SmartPayoffCard({ debts, today, available, buffer, bufferGoal, leftoverForExtraDebt }) {
+  const ranked = rankDebtsToKill(debts, today);
+  if (!ranked.length) return null;
+  const top = ranked[0];
+  const next = top.d;
   const bufferGap = Math.max(0, asMoney(bufferGoal) - asMoney(buffer));
   const safeToPay = Math.max(0, available - bufferGap);
-  const suggested = Math.min(asMoney(next.balance), safeToPay);
+  const suggested = Math.min(asMoney(next.balance), Math.max(safeToPay, leftoverForExtraDebt || 0));
+  const runners = ranked.slice(1, 3);
   return (
     <section style={{ ...card, borderColor: C.blue, background: `linear-gradient(145deg, ${C.surface}, ${C.surface2})` }}>
       <div style={rowBetween}>
-        <SectionLabel icon={Lightbulb}>SMART NEXT MOVE</SectionLabel>
-        <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.blue }}>AUTO PRIORITY</span>
+        <SectionLabel icon={Lightbulb}>KILL THIS FIRST</SectionLabel>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.blue }}>AI PRIORITY</span>
       </div>
-      <div style={{ marginTop: 9, fontFamily: FONT_DISP, fontWeight: 700, fontSize: 15, color: C.text }}>
-        Focus on {next.name}
+      <div style={{ marginTop: 9, fontFamily: FONT_DISP, fontWeight: 700, fontSize: 17, color: C.text }}>
+        {next.name}
       </div>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, lineHeight: 1.55, marginTop: 4 }}>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.lane, marginTop: 3 }}>
+        {usd(next.balance)} left
+      </div>
+      <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 5 }}>
+        {top.reasons.map((r) => (
+          <div key={r} style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, lineHeight: 1.4 }}>
+            → {r}
+          </div>
+        ))}
+      </div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.text, lineHeight: 1.55, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.lineSoft}` }}>
         {bufferGap > 0
-          ? `First add ${usd0(bufferGap)} to your emergency buffer. Then direct extra cash to this debt.`
+          ? `First fund ${usd0(bufferGap)} into your car buffer, then attack this debt.`
           : suggested > 0
-            ? `You currently have about ${usd0(suggested)} available after logged taxes and expenses.`
-            : "Keep logging income and expenses to unlock a safe payment suggestion."}
+            ? `Safe strike amount now: about ${usd0(suggested)} after tax, expenses, and buffer.`
+            : "Log more income (or cut spend) to unlock a safe payment amount."}
+      </div>
+      {runners.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1, color: C.faint, marginBottom: 6 }}>NEXT UP</div>
+          {runners.map(({ d, reasons }) => (
+            <div key={d.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 4 }}>
+              <span style={{ fontFamily: FONT_DISP, fontSize: 12.5, color: C.muted }}>{d.name}</span>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint, textAlign: "right" }}>{reasons[0]}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function NetProjectionCard({
+  projectedGross,
+  projectedTax,
+  projectedSpend,
+  debtPaidThisMonth,
+  monthlyMins,
+  projectedAfterLoans,
+  leftoverForExtraDebt,
+}) {
+  return (
+    <section style={card}>
+      <SectionLabel icon={Target}>MONTH-END PROJECTION</SectionLabel>
+      <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 15, color: C.text, marginTop: 8 }}>
+        Leftover after expenses & loans
+      </div>
+      <div style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: 28, color: C.green, letterSpacing: -1, marginTop: 4 }}>
+        {usd0(leftoverForExtraDebt)}
+      </div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint, marginTop: 3 }}>
+        Available to kill extra debt (after tax, spend, mins, buffer)
+      </div>
+      <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+        <ProjRow label="Projected gross" value={usd0(projectedGross)} />
+        <ProjRow label="Tax set-aside" value={`−${usd0(projectedTax)}`} tone={C.amber} />
+        <ProjRow label="Projected expenses" value={`−${usd0(projectedSpend)}`} tone={C.amber} />
+        <ProjRow label="Loan mins (active)" value={`−${usd0(monthlyMins)}`} tone={C.amber} />
+        <ProjRow label="Already paid to debts" value={`−${usd0(debtPaidThisMonth)}`} tone={C.muted} />
+        <div style={{ height: 1, background: C.lineSoft, margin: "4px 0" }} />
+        <ProjRow label="After expenses & mins" value={usd0(projectedAfterLoans)} tone={C.green} bold />
       </div>
     </section>
   );
 }
 
-function DailyTargetCard({ planMonth, earnedToday, baseDaily, adjustedDaily, runningSurplus, daysRemaining }) {
+function ProjRow({ label, value, tone = C.text, bold }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+      <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted }}>{label}</span>
+      <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: tone, fontWeight: bold ? 700 : 500 }}>{value}</span>
+    </div>
+  );
+}
+
+function DailyTargetCard({ planMonth, earnedToday, baseDaily, adjustedDaily, runningSurplus, daysRemaining, pastShortfall, dailyCatchUpBump }) {
   if (!planMonth) {
     return (
       <section style={card}>
@@ -1060,6 +1224,7 @@ function DailyTargetCard({ planMonth, earnedToday, baseDaily, adjustedDaily, run
   const ahead = runningSurplus >= 0;
   const pct = adjustedDaily > 0 ? Math.min(100, (earnedToday / adjustedDaily) * 100) : 0;
   const remaining = Math.max(0, adjustedDaily - earnedToday);
+  const redistributing = pastShortfall > 0.5;
   return (
     <section
       style={{
@@ -1152,6 +1317,24 @@ function DailyTargetCard({ planMonth, earnedToday, baseDaily, adjustedDaily, run
           </div>
         </div>
       </div>
+
+      {redistributing && (
+        <div
+          style={{
+            marginTop: 12,
+            background: C.amberDim,
+            border: `1px solid ${C.amber}`,
+            borderRadius: 10,
+            padding: "9px 11px",
+            fontFamily: FONT_MONO,
+            fontSize: 11,
+            color: C.text,
+            lineHeight: 1.45,
+          }}
+        >
+          Missed {usd0(pastShortfall)} earlier this month → +{usd0(dailyCatchUpBump)}/day spread across {daysRemaining} remaining days.
+        </div>
+      )}
 
       <div style={{ ...progTrack, height: 10, marginTop: 16, borderRadius: 8 }}>
         <div
@@ -1341,14 +1524,17 @@ function EarningForm({ onSubmit }) {
 }
 
 const EXP_CATS = ["Gas", "Rent", "Food", "Car", "Phone", "Other"];
-function ExpenseForm({ onSubmit }) {
-  const [date, setDate] = useState(todayISO());
-  const [amount, setAmount] = useState("");
-  const [category, setCategory] = useState("Gas");
-  const [note, setNote] = useState("");
+function ExpenseForm({ onSubmit, expense, onCancel }) {
+  const editing = Boolean(expense);
+  const [date, setDate] = useState(expense?.date || todayISO());
+  const [amount, setAmount] = useState(expense?.amount ?? "");
+  const [category, setCategory] = useState(expense?.category || "Gas");
+  const [note, setNote] = useState(expense?.note || "");
   const submit = () => {
     if (!amount) return;
-    onSubmit({ date, amount, category, note });
+    const ok = onSubmit({ date, amount, category, note });
+    if (editing) return;
+    if (ok === false) return;
     setAmount(""); setNote("");
   };
   return (
@@ -1364,16 +1550,21 @@ function ExpenseForm({ onSubmit }) {
       <Field label="Category">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {EXP_CATS.map((c) => (
-            <button key={c} onClick={() => setCategory(c)} style={chip(category === c)}>{c}</button>
+            <button key={c} type="button" onClick={() => setCategory(c)} style={chip(category === c)}>{c}</button>
           ))}
         </div>
       </Field>
       <Field label="Note (optional)">
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Chevron fill-up" style={input} />
       </Field>
-      <button onClick={submit} style={{ ...btnPrimary, background: C.amber, borderColor: C.amber }}>
-        <Plus size={15} /> Save expense
-      </button>
+      <div style={{ display: "flex", gap: 9 }}>
+        <button onClick={submit} style={{ ...btnPrimary, background: C.amber, borderColor: C.amber, flex: 1 }}>
+          {editing ? <><Save size={15} /> Save changes</> : <><Plus size={15} /> Save expense</>}
+        </button>
+        {editing && onCancel && (
+          <button onClick={onCancel} style={{ ...btnGhost, flex: 0.45 }}>Cancel</button>
+        )}
+      </div>
     </div>
   );
 }
@@ -1538,8 +1729,9 @@ function DebtCard({ d, today, onPay, onEdit, onDelete }) {
 }
 
 /* ---------- Money view (history + logging) ---------- */
-function MoneyView({ earnings, expenses, onEarn, onExpense, onRemove }) {
+function MoneyView({ earnings, expenses, onEarn, onExpense, onUpdateExpense, onRemove }) {
   const [mode, setMode] = useState("earn");
+  const [editingExpense, setEditingExpense] = useState(null);
   const feed = [
     ...earnings.map((e) => ({ ...e, kind: "earn", amt: (Number(e.gross) || 0) + (Number(e.other) || 0) })),
     ...expenses.map((e) => ({ ...e, kind: "spend", amt: Number(e.amount) || 0 })),
@@ -1548,11 +1740,30 @@ function MoneyView({ earnings, expenses, onEarn, onExpense, onRemove }) {
   return (
     <div>
       <section style={card}>
-        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-          <TogglePill on={mode === "earn"} onClick={() => setMode("earn")}>Log earnings</TogglePill>
-          <TogglePill on={mode === "spend"} onClick={() => setMode("spend")}>Log expense</TogglePill>
-        </div>
-        {mode === "earn" ? <EarningForm onSubmit={onEarn} /> : <ExpenseForm onSubmit={onExpense} />}
+        {editingExpense ? (
+          <>
+            <SectionLabel icon={Pencil}>EDIT EXPENSE</SectionLabel>
+            <div style={{ marginTop: 10 }}>
+              <ExpenseForm
+                key={editingExpense.id}
+                expense={editingExpense}
+                onCancel={() => setEditingExpense(null)}
+                onSubmit={(values) => {
+                  const ok = onUpdateExpense(editingExpense.id, values);
+                  if (ok) setEditingExpense(null);
+                }}
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+              <TogglePill on={mode === "earn"} onClick={() => setMode("earn")}>Log earnings</TogglePill>
+              <TogglePill on={mode === "spend"} onClick={() => setMode("spend")}>Log expense</TogglePill>
+            </div>
+            {mode === "earn" ? <EarningForm onSubmit={onEarn} /> : <ExpenseForm onSubmit={onExpense} />}
+          </>
+        )}
       </section>
 
       <SectionHeading>History</SectionHeading>
@@ -1578,6 +1789,18 @@ function MoneyView({ earnings, expenses, onEarn, onExpense, onRemove }) {
             <div style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: 14, color: isEarn ? C.green : C.amber }}>
               {isEarn ? "+" : "−"}{usd0(f.amt)}
             </div>
+            {!isEarn && (
+              <button
+                onClick={() => {
+                  setEditingExpense(f);
+                  window.scrollTo?.({ top: 0, behavior: "smooth" });
+                }}
+                style={{ ...btnSm, padding: 6, border: "none", background: "transparent" }}
+                title="Edit expense"
+              >
+                <Pencil size={14} color={C.faint} />
+              </button>
+            )}
             <button onClick={() => onRemove(isEarn ? "earn" : "spend", f.id)} style={{ ...btnSm, padding: 6, border: "none", background: "transparent" }}>
               <Trash2 size={14} color={C.faint} />
             </button>
