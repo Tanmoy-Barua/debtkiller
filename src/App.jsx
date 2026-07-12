@@ -10,6 +10,7 @@ import {
   Tooltip, ResponsiveContainer, ReferenceLine
 } from "recharts";
 import { cloudEnabled, loadAppState, saveAppState, subscribeAppState, getSession, onAuthChange, signIn, signOut } from "./cloudStore.js";
+import PlaidConnect from "./PlaidConnect.jsx";
 
 /* ------------------------------------------------------------------ */
 /*  Palette — "cockpit at night". Custom hexes via inline styles       */
@@ -728,15 +729,25 @@ export default function App() {
         )}
 
         {tab === "settings" && (
-          <SettingsView
-            settings={settings}
-            setSettings={setSettings}
-            onExport={exportJSON}
-            onImportClick={() => importInputRef.current?.click()}
-            onReset={resetAll}
-            onSignOut={cloudEnabled ? handleSignOut : null}
-            accountEmail={session?.user?.email || null}
-          />
+          <>
+            <SectionHeading>Bank connections</SectionHeading>
+            <PlaidConnect
+              debts={debts}
+              setDebts={setDebts}
+              today={today}
+              flash={flash}
+              styles={{ card, btnPrimary, btnGhost, FONT_MONO, FONT_DISP, C, SectionLabel }}
+            />
+            <SettingsView
+              settings={settings}
+              setSettings={setSettings}
+              onExport={exportJSON}
+              onImportClick={() => importInputRef.current?.click()}
+              onReset={resetAll}
+              onSignOut={cloudEnabled ? handleSignOut : null}
+              accountEmail={session?.user?.email || null}
+            />
+          </>
         )}
       </div>
 
@@ -1698,6 +1709,11 @@ function DebtCard({ d, today, onPay, onEdit, onDelete }) {
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
           {d.paid && <div style={paidBadge}><Check size={11} /> PAID</div>}
           <span style={{ fontFamily: FONT_DISP, fontWeight: 600, fontSize: 14.5, color: C.text, overflow: "hidden", textOverflow: "ellipsis" }}>{d.name}</span>
+          {d.plaidAccountId && (
+            <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: C.blue, border: `1px solid ${C.blue}`, borderRadius: 6, padding: "2px 5px" }}>
+              PLAID{d.plaidMask ? ` ···${d.plaidMask}` : ""}
+            </span>
+          )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
           {days != null && !d.paid && <span style={{ ...deadlineBadge, background: soon ? (urgent ? C.redDim : C.amberDim) : C.surface2, borderColor: soon ? (urgent ? C.red : C.amber) : C.line, color: soon ? (urgent ? C.red : C.amber) : C.muted }}>{days <= 0 ? "DUE TODAY" : `${days}D LEFT`}</span>}
