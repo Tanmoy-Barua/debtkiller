@@ -917,7 +917,7 @@ export default function App() {
               remaining={remainingDebt}
               pctPaid={pctPaid}
             />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
               <StreakCard streak={streak} target={totalDailyAim || baseDaily} />
               <GasNetCard earnedToday={earnedToday} gasToday={gasToday} gasMonth={gasThisMonth} net={netAfterFuelToday} />
             </div>
