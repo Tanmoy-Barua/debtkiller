@@ -3,14 +3,14 @@ import {
   Home, TrendingUp, Wallet, BarChart3, Settings as SettingsIcon,
   Plus, Check, AlertTriangle, Download, Upload, Car, Flag, Target,
   PiggyBank, Receipt, Trash2, X, ChevronRight, Zap, Shield, Gauge,
-  Search, ArrowUpDown, Lightbulb, Pencil, Save
+  Search, ArrowUpDown, Lightbulb, Pencil, Save, CalendarCheck, Flame, Landmark,
+  Timer, Bell, Share2, Fuel, CalendarDays, Trophy
 } from "lucide-react";
 import {
   LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine
 } from "recharts";
-import { cloudEnabled, loadAppState, saveAppState, subscribeAppState, getSession, onAuthChange, signIn, signOut } from "./cloudStore.js";
-import PlaidConnect from "./PlaidConnect.jsx";
+import { cloudEnabled, loadAppState, saveAppState, subscribeAppState, getSession, onAuthChange, signIn, signOut, emptyAppState } from "./cloudStore.js";
 
 /* ------------------------------------------------------------------ */
 /*  Palette — "cockpit at night". Custom hexes via inline styles       */
@@ -46,16 +46,16 @@ const INITIAL_TOTAL = 10611.5;
 const AS_OF = "2026-07-05";
 
 const seedDebts = () => [
-  { id: 1, name: "Credit Card 01", balance: 508.26, min: null, deadline: null, type: "Interest-bearing", group: "card" },
-  { id: 2, name: "Credit Card 02", balance: 400.0, min: null, deadline: null, type: "Interest-bearing", group: "card" },
-  { id: 3, name: "Credit Card 03", balance: 500.0, min: null, deadline: null, type: "Interest-bearing", group: "card" },
-  { id: 4, name: "Credit Card 04", balance: 280.0, min: null, deadline: null, type: "Interest-bearing", group: "card" },
-  { id: 5, name: "Lender Loan 01", balance: 2173.24, min: 168, deadline: null, type: "Fixed installment", group: "loan" },
-  { id: 6, name: "Lender Loan 02", balance: 750.0, min: 90, deadline: "2026-07-17", type: "Fixed installment", group: "loan" },
-  { id: 7, name: "Anusha (personal)", balance: 2200.0, min: null, deadline: "2026-08-15", type: "Personal, no interest", group: "personal" },
-  { id: 8, name: "Mom (personal)", balance: 800.0, min: null, deadline: null, type: "Personal, no interest", group: "personal" },
-  { id: 9, name: "Sister (personal)", balance: 1500.0, min: null, deadline: null, type: "Personal, no interest", group: "personal" },
-  { id: 10, name: "Dad (personal)", balance: 1500.0, min: null, deadline: null, type: "Personal, no interest", group: "personal" },
+  { id: 1, name: "Credit Card 01", balance: 508.26, min: null, deadline: null, type: "Interest-bearing", group: "card", apr: 24.99 },
+  { id: 2, name: "Credit Card 02", balance: 400.0, min: null, deadline: null, type: "Interest-bearing", group: "card", apr: 22.99 },
+  { id: 3, name: "Credit Card 03", balance: 500.0, min: null, deadline: null, type: "Interest-bearing", group: "card", apr: 26.99 },
+  { id: 4, name: "Credit Card 04", balance: 280.0, min: null, deadline: null, type: "Interest-bearing", group: "card", apr: 19.99 },
+  { id: 5, name: "Lender Loan 01", balance: 2173.24, min: 168, deadline: null, type: "Fixed installment", group: "loan", apr: 9.99 },
+  { id: 6, name: "Lender Loan 02", balance: 750.0, min: 90, deadline: "2026-07-17", type: "Fixed installment", group: "loan", apr: 11.99 },
+  { id: 7, name: "Anusha (personal)", balance: 2200.0, min: null, deadline: "2026-08-15", type: "Personal, no interest", group: "personal", apr: 0 },
+  { id: 8, name: "Mom (personal)", balance: 800.0, min: null, deadline: null, type: "Personal, no interest", group: "personal", apr: 0 },
+  { id: 9, name: "Sister (personal)", balance: 1500.0, min: null, deadline: null, type: "Personal, no interest", group: "personal", apr: 0 },
+  { id: 10, name: "Dad (personal)", balance: 1500.0, min: null, deadline: null, type: "Personal, no interest", group: "personal", apr: 0 },
 ].map((d) => ({ ...d, originalBalance: d.balance, paid: false, payments: [] }));
 
 /* Plan month targets keyed YYYY-MM: {target, daily} */
@@ -89,6 +89,8 @@ const DEFAULT_SETTINGS = {
   activePlan: "A",
   taxRate: 0.15,
   bufferGoal: 500,
+  payoffMethod: "avalanche", // "avalanche" | "snowball"
+  dailyGasBudget: 40, // planned gas spend per day (Uber)
 };
 
 /* ------------------------------------------------------------------ */
@@ -128,6 +130,129 @@ const monthLabel = (iso) =>
 const daysBetween = (aISO, bISO) =>
   Math.ceil((parseISO(bISO) - parseISO(aISO)) / 86400000);
 const uid = () => Date.now() + Math.floor(Math.random() * 1000);
+const addDaysISO = (iso, n) => {
+  const d = parseISO(iso);
+  d.setDate(d.getDate() + n);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+const weekdayShort = (iso) =>
+  parseISO(iso).toLocaleDateString("en-US", { weekday: "short" });
+const weekdayLong = (iso) =>
+  parseISO(iso).toLocaleDateString("en-US", { weekday: "long" });
+const nextFridayISO = (fromISO) => {
+  const d = parseISO(fromISO);
+  const day = d.getDay(); // 0 Sun … 5 Fri
+  const add = day <= 5 ? 5 - day : 6; // Sat → next Fri
+  return addDaysISO(fromISO, add === 0 ? 0 : add);
+};
+const debtApr = (d) => {
+  if (d.apr != null && d.apr !== "" && Number.isFinite(Number(d.apr))) return Math.max(0, Number(d.apr));
+  const m = String(d.type || "").match(/(\d+(?:\.\d+)?)\s*%/);
+  if (m) return Number(m[1]);
+  if (d.group === "card") return 22.99;
+  if (d.group === "loan") return 9.99;
+  return 0;
+};
+const monthlyInterestOf = (d) => (asMoney(d.balance) * debtApr(d)) / 100 / 12;
+/** Rough payoff sim: mins + extra each month; returns months + interest paid. */
+const simulatePayoff = (debts, method, monthlyExtra) => {
+  const items = debts
+    .filter((d) => !d.paid && asMoney(d.balance) > 0.005)
+    .map((d) => ({
+      id: d.id,
+      balance: asMoney(d.balance),
+      min: asMoney(d.min) || Math.max(25, asMoney(d.balance) * 0.02),
+      apr: debtApr(d),
+    }));
+  if (!items.length) return { months: 0, interest: 0 };
+  let interest = 0;
+  let months = 0;
+  const extra = Math.max(0, monthlyExtra || 0);
+  while (items.some((x) => x.balance > 0.005) && months < 120) {
+    months += 1;
+    for (const x of items) {
+      if (x.balance <= 0.005) continue;
+      const accrued = (x.balance * x.apr) / 100 / 12;
+      x.balance += accrued;
+      interest += accrued;
+    }
+    let pool = items.reduce((s, x) => s + (x.balance > 0.005 ? x.min : 0), 0) + extra;
+    const order = [...items]
+      .filter((x) => x.balance > 0.005)
+      .sort((a, b) =>
+        method === "snowball"
+          ? a.balance - b.balance || b.apr - a.apr
+          : b.apr - a.apr || a.balance - b.balance
+      );
+    for (const x of order) {
+      if (pool <= 0.005) break;
+      const pay = Math.min(x.balance, pool);
+      x.balance = Math.max(0, x.balance - pay);
+      pool -= pay;
+    }
+  }
+  return { months, interest };
+};
+const weekWindow = (today) => {
+  const dow = parseISO(today).getDay(); // 0=Sun
+  const daysFromMon = dow === 0 ? 6 : dow - 1;
+  const start = addDaysISO(today, -daysFromMon);
+  const end = addDaysISO(start, 6);
+  return { start, end, isSunday: dow === 0 };
+};
+
+const incomeOfEntry = (e) => (Number(e.gross) || 0) + (Number(e.other) || 0);
+
+/** Consecutive days (ending yesterday or today) that hit daily target. */
+function computeStreak(earnings, today, baseDaily, incomeOf) {
+  if (!baseDaily || baseDaily <= 0) return 0;
+  const byDay = {};
+  earnings.forEach((e) => {
+    byDay[e.date] = (byDay[e.date] || 0) + incomeOf(e);
+  });
+  let streak = 0;
+  let cursor = today;
+  // If today not yet hit, start from yesterday
+  if ((byDay[today] || 0) + 0.5 < baseDaily) {
+    cursor = addDaysISO(today, -1);
+  }
+  for (let i = 0; i < 120; i++) {
+    if ((byDay[cursor] || 0) + 0.5 >= baseDaily) {
+      streak += 1;
+      cursor = addDaysISO(cursor, -1);
+    } else break;
+  }
+  return streak;
+}
+
+function bestDaysOfWeek(earnings, incomeOf) {
+  const buckets = { Sun: [], Mon: [], Tue: [], Wed: [], Thu: [], Fri: [], Sat: [] };
+  const labels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  earnings.forEach((e) => {
+    const d = parseISO(e.date).getDay();
+    buckets[labels[d]].push(incomeOf(e));
+  });
+  return labels
+    .map((name) => {
+      const vals = buckets[name];
+      const total = vals.reduce((s, n) => s + n, 0);
+      const avg = vals.length ? total / vals.length : 0;
+      return { name, avg, total, count: vals.length };
+    })
+    .filter((x) => x.count > 0)
+    .sort((a, b) => b.avg - a.avg);
+}
+
+function whatIfFreeDate(remainingDebt, overallDailyAvg, taxRate, expenseDailyAvg, extraPerDay) {
+  const dailyNet = Math.max(0, (overallDailyAvg + extraPerDay) * (1 - taxRate) - expenseDailyAvg);
+  if (remainingDebt <= 0.005) return todayISO();
+  if (dailyNet < 1) return null;
+  const days = Math.ceil(remainingDebt / dailyNet);
+  return addDaysISO(todayISO(), days);
+}
 
 /* ------------------------------------------------------------------ */
 /*  Persistence is handled by cloudStore.js. It always keeps a local  */
@@ -142,13 +267,17 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState("home");
-  const [debts, setDebts] = useState(seedDebts);
+  const [debts, setDebts] = useState([]);
   const [earnings, setEarnings] = useState([]); // {id,date,gross,other,note}
   const [expenses, setExpenses] = useState([]); // {id,date,amount,category,note}
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [buffer, setBuffer] = useState(0);
+  const [taxWallet, setTaxWallet] = useState(0);
+  const [milestonesSeen, setMilestonesSeen] = useState([]);
+  const [whatIfExtra, setWhatIfExtra] = useState(50);
   const [celebrate, setCelebrate] = useState(null);
   const [toast, setToast] = useState(null);
+  const [nudgeDismissed, setNudgeDismissed] = useState(false);
   const [syncStatus, setSyncStatus] = useState(cloudEnabled ? "connecting" : "local");
   const toastTimer = useRef(null);
   const saveTimer = useRef(null);
@@ -163,6 +292,7 @@ export default function App() {
           ...d,
           balance: asMoney(d.balance),
           originalBalance: asMoney(d.originalBalance ?? d.balance),
+          apr: d.apr == null || d.apr === "" ? null : Number(d.apr),
           payments: Array.isArray(d.payments) ? d.payments : [],
           paid: Boolean(d.paid) || asMoney(d.balance) <= 0.005,
         }))
@@ -172,6 +302,13 @@ export default function App() {
     if (Array.isArray(s.expenses)) setExpenses(s.expenses);
     if (s.settings) setSettings({ ...DEFAULT_SETTINGS, ...s.settings });
     if (typeof s.buffer === "number") setBuffer(s.buffer);
+    if (typeof s.taxWallet === "number") setTaxWallet(Math.max(0, s.taxWallet));
+    else if (Array.isArray(s.earnings) && s.settings) {
+      const rate = Number(s.settings.taxRate ?? DEFAULT_SETTINGS.taxRate) || 0.15;
+      const gross = s.earnings.reduce((sum, e) => sum + (Number(e.gross) || 0) + (Number(e.other) || 0), 0);
+      setTaxWallet(+(gross * rate).toFixed(2));
+    }
+    if (Array.isArray(s.milestonesSeen)) setMilestonesSeen(s.milestonesSeen);
   };
 
   /* ---- inject fonts + motion once ---- */
@@ -235,16 +372,19 @@ export default function App() {
     };
   }, []);
 
-  /* ---- load once after login ---- */
+  /* ---- load once after login / account switch ---- */
   useEffect(() => {
     if (!authReady || !session) return undefined;
     let active = true;
     setLoaded(false);
+    applyingRemote.current = true;
+    applyState(emptyAppState());
     (async () => {
       try {
         const { state: s, source } = await loadAppState();
         if (!active) return;
-        if (s) applyState(s);
+        applyingRemote.current = true;
+        applyState(s || emptyAppState());
         setSyncStatus(source === "cloud" ? "synced" : cloudEnabled ? "ready" : "local");
       } catch (error) {
         console.error(error);
@@ -278,11 +418,11 @@ export default function App() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setSyncStatus(cloudEnabled ? "saving" : "local");
     saveTimer.current = setTimeout(async () => {
-      const result = await saveAppState({ debts, earnings, expenses, settings, buffer });
+      const result = await saveAppState({ debts, earnings, expenses, settings, buffer, taxWallet, milestonesSeen });
       setSyncStatus(result.cloud ? "synced" : cloudEnabled ? "error" : "local");
     }, 700);
     return () => saveTimer.current && clearTimeout(saveTimer.current);
-  }, [debts, earnings, expenses, settings, buffer, loaded, session?.user?.id || session?.local]);
+  }, [debts, earnings, expenses, settings, buffer, taxWallet, milestonesSeen, loaded, session?.user?.id || session?.local]);
 
   const flash = (msg) => {
     setToast(msg);
@@ -295,6 +435,7 @@ export default function App() {
       await signOut();
       setSession(null);
       setLoaded(false);
+      applyState(emptyAppState());
       flash("Signed out");
     } catch (error) {
       flash(error.message || "Could not sign out");
@@ -312,7 +453,7 @@ export default function App() {
   const plan = PLANS[settings.activePlan] || PLANS.A;
   const planMonth = plan.months[curMonth] || null;
 
-  const incomeOf = (e) => (Number(e.gross) || 0) + (Number(e.other) || 0);
+  const incomeOf = (e) => incomeOfEntry(e);
   const totalIncome = earnings.reduce((s, e) => s + incomeOf(e), 0);
   const taxReserve = totalIncome * settings.taxRate;
   const totalExpenses = expenses.reduce((s, e) => s + asMoney(e.amount), 0);
@@ -383,6 +524,37 @@ export default function App() {
     paceDelta = daysBetween(projectedFreeISO, plan.freeDate);
   }
 
+  const gasToday = expenses
+    .filter((e) => e.date === today && String(e.category || "").toLowerCase() === "gas")
+    .reduce((s, e) => s + asMoney(e.amount), 0);
+  const gasThisMonth = expenses
+    .filter((e) => monthKey(e.date) === curMonth && String(e.category || "").toLowerCase() === "gas")
+    .reduce((s, e) => s + asMoney(e.amount), 0);
+  const netAfterFuelToday = earnedToday - gasToday;
+  const hoursLogged = earnings.reduce((s, e) => s + (Number(e.hours) || 0), 0);
+  const hoursThisMonth = earnings
+    .filter((e) => monthKey(e.date) === curMonth)
+    .reduce((s, e) => s + (Number(e.hours) || 0), 0);
+  const effectiveHourly =
+    hoursThisMonth > 0 ? earnedThisMonth / hoursThisMonth : hoursLogged > 0 ? totalIncome / hoursLogged : null;
+  const bestDays = useMemo(() => bestDaysOfWeek(earnings, incomeOfEntry), [earnings]);
+  const dailyGasBudget = asMoney(settings.dailyGasBudget);
+  const totalDailyAim = (adjustedDaily || 0) + dailyGasBudget;
+  const streak = computeStreak(earnings, today, totalDailyAim || baseDaily + dailyGasBudget, incomeOfEntry);
+  const paidSoFar = Math.max(0, originalTotal - remainingDebt);
+  const daysToFree = Math.max(0, daysBetween(today, projectedFreeISO));
+  const weeksToFree = Math.max(0, Math.ceil(daysToFree / 7));
+  const whatIfDate = whatIfFreeDate(
+    remainingDebt,
+    overallDailyAvg || baseDaily,
+    settings.taxRate,
+    expenseDailyAvg,
+    whatIfExtra
+  );
+  const hourNow = new Date().getHours();
+  const showEveningNudge =
+    !!planMonth && hourNow >= 18 && earnedToday + 0.5 < totalDailyAim && !nudgeDismissed;
+
   /* deadline alerts */
   const alerts = activeDebts
     .filter((d) => d.deadline)
@@ -391,11 +563,21 @@ export default function App() {
     .sort((a, b) => a.days - b.days);
 
   /* ---------------- actions ---------------- */
-  const addEarning = ({ date, gross, other, note }) => {
-    const entry = { id: uid(), date: date || today, gross: asMoney(gross), other: asMoney(other), note: (note || "").trim() };
-    if (entry.gross + entry.other <= 0) return flash("Enter an income amount");
+  const addEarning = ({ date, gross, other, note, hours }) => {
+    const entry = {
+      id: uid(),
+      date: date || today,
+      gross: asMoney(gross),
+      other: asMoney(other),
+      hours: Math.max(0, Number(hours) || 0) || null,
+      note: (note || "").trim(),
+    };
+    const income = entry.gross + entry.other;
+    if (income <= 0) return flash("Enter an income amount");
+    const taxBite = +(income * settings.taxRate).toFixed(2);
     setEarnings((p) => [entry, ...p]);
-    flash("Earnings logged");
+    if (taxBite > 0) setTaxWallet((w) => +(w + taxBite).toFixed(2));
+    flash(taxBite > 0 ? `Logged · ${usd0(taxBite)} parked in tax wallet` : "Earnings logged");
   };
   const addExpense = ({ date, amount, category, note }) => {
     const value = asMoney(amount);
@@ -427,11 +609,12 @@ export default function App() {
     else setExpenses((p) => p.filter((e) => e.id !== id));
   };
 
-  const addDebt = ({ name, balance, min, deadline, type, group }) => {
+  const addDebt = ({ name, balance, min, deadline, type, group, apr }) => {
     const cleanName = (name || "").trim();
     const cleanBalance = asMoney(balance);
     if (!cleanName) return flash("Enter a debt name");
     if (cleanBalance <= 0) return flash("Enter the current balance");
+    const aprNum = apr === "" || apr == null ? null : Number(apr);
     const debt = {
       id: uid(),
       name: cleanName,
@@ -441,6 +624,7 @@ export default function App() {
       deadline: deadline || null,
       type: (type || "Interest-bearing").trim(),
       group: ["card", "loan", "personal"].includes(group) ? group : "card",
+      apr: Number.isFinite(aprNum) ? Math.max(0, aprNum) : null,
       paid: false,
       payments: [],
       createdAt: today,
@@ -455,6 +639,7 @@ export default function App() {
     const cleanBalance = asMoney(changes.balance);
     if (!cleanName) return flash("Enter a debt name");
     if (cleanBalance < 0) return flash("Balance cannot be negative");
+    const aprNum = changes.apr === "" || changes.apr == null ? null : Number(changes.apr);
     setDebts((prev) => prev.map((d) => {
       if (d.id !== debtId) return d;
       const alreadyPaid = Math.max(0, asMoney(d.originalBalance) - asMoney(d.balance));
@@ -468,6 +653,7 @@ export default function App() {
         deadline: changes.deadline || null,
         type: (changes.type || "Interest-bearing").trim(),
         group: ["card", "loan", "personal"].includes(changes.group) ? changes.group : "card",
+        apr: Number.isFinite(aprNum) ? Math.max(0, aprNum) : null,
         paid: cleanBalance <= 0.005,
       };
     }));
@@ -483,6 +669,7 @@ export default function App() {
   const logPayment = (debtId, amount) => {
     const amt = +amount;
     if (!amt || amt <= 0) return;
+    const paidBefore = Math.max(0, originalTotal - remainingDebt);
     setDebts((prev) =>
       prev.map((d) => {
         if (d.id !== debtId) return d;
@@ -490,8 +677,8 @@ export default function App() {
         const nb = Math.max(0, +(d.balance - applied).toFixed(2));
         const nowPaid = nb <= 0.005;
         if (nowPaid && !d.paid) {
-          setCelebrate(d.name);
-          setTimeout(() => setCelebrate(null), 2900);
+          setCelebrate(`${d.name} cleared`);
+          setTimeout(() => setCelebrate(null), 3200);
         }
         return {
           ...d,
@@ -501,6 +688,17 @@ export default function App() {
         };
       })
     );
+    const paidAfter = paidBefore + amt;
+    const crossed = [];
+    for (let k = 1000; k <= paidAfter; k += 1000) {
+      if (paidBefore < k && paidAfter >= k && !milestonesSeen.includes(k)) crossed.push(k);
+    }
+    if (crossed.length) {
+      setMilestonesSeen((m) => [...m, ...crossed]);
+      const top = crossed[crossed.length - 1];
+      setCelebrate(`$${Math.round(top / 1000)}k paid off`);
+      setTimeout(() => setCelebrate(null), 3200);
+    }
     flash("Payment recorded");
   };
 
@@ -511,10 +709,17 @@ export default function App() {
     flash(a > 0 ? "Buffer funded" : "Buffer adjusted");
   };
 
+  const withdrawTax = (amt) => {
+    const a = asMoney(amt);
+    if (a <= 0) return flash("Enter an amount");
+    setTaxWallet((w) => Math.max(0, +(w - a).toFixed(2)));
+    flash(`Took ${usd0(a)} out of tax wallet`);
+  };
+
   /* export / import */
   const exportJSON = () => {
     const blob = new Blob(
-      [JSON.stringify({ debts, earnings, expenses, settings, buffer, exportedAt: new Date().toISOString() }, null, 2)],
+      [JSON.stringify({ debts, earnings, expenses, settings, buffer, taxWallet, milestonesSeen, exportedAt: new Date().toISOString() }, null, 2)],
       { type: "application/json" }
     );
     const url = URL.createObjectURL(blob);
@@ -531,11 +736,7 @@ export default function App() {
       try {
         const s = JSON.parse(reader.result);
         if (!s || typeof s !== "object" || !Array.isArray(s.debts)) throw new Error("Invalid backup");
-        setDebts(s.debts.map((d) => ({ ...d, balance: asMoney(d.balance), originalBalance: asMoney(d.originalBalance ?? d.balance), payments: Array.isArray(d.payments) ? d.payments : [], paid: asMoney(d.balance) <= 0.005 })));
-        if (Array.isArray(s.earnings)) setEarnings(s.earnings);
-        if (Array.isArray(s.expenses)) setExpenses(s.expenses);
-        if (s.settings) setSettings({ ...DEFAULT_SETTINGS, ...s.settings });
-        if (typeof s.buffer === "number") setBuffer(s.buffer);
+        applyState(s);
         flash("Backup restored");
       } catch (e) {
         flash("Couldn't read that file");
@@ -550,8 +751,53 @@ export default function App() {
     setExpenses([]);
     setSettings(DEFAULT_SETTINGS);
     setBuffer(0);
+    setTaxWallet(0);
+    setMilestonesSeen([]);
     flash("Reset to starting data");
   };
+
+  const shareMonthReport = async () => {
+    const lines = [
+      `Debt Destroyer · ${monthLabel(curMonth + "-01")}`,
+      `Earned: ${usd0(earnedThisMonth)} / target ${usd0(monthTarget || 0)}`,
+      `Spent: ${usd0(spentThisMonth)} · Gas: ${usd0(gasThisMonth)}`,
+      `Tax wallet: ${usd0(taxWallet)}`,
+      `Debt left: ${usd0(remainingDebt)} · ${pctPaid.toFixed(1)}% paid`,
+      `Streak: ${streak} day${streak === 1 ? "" : "s"}`,
+      `Debt-free in ~${daysToFree} days (${weeksToFree} weeks)`,
+      effectiveHourly != null ? `Effective: ${usd(effectiveHourly)}/hr` : null,
+      bestDays[0] ? `Best day: ${bestDays[0].name} (~${usd0(bestDays[0].avg)} avg)` : null,
+    ].filter(Boolean).join("\n");
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Debt Destroyer report", text: lines });
+      } else {
+        await navigator.clipboard.writeText(lines);
+        flash("Month report copied");
+        return;
+      }
+      flash("Report shared");
+    } catch {
+      try {
+        await navigator.clipboard.writeText(lines);
+        flash("Month report copied");
+      } catch {
+        flash("Couldn't share — copy failed");
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!showEveningNudge || typeof Notification === "undefined") return undefined;
+    if (Notification.permission === "granted") {
+      try {
+        new Notification("Debt Destroyer", {
+          body: `Still ${usd0(Math.max(0, adjustedDaily - earnedToday))} short of today's target.`,
+        });
+      } catch { /* ignore */ }
+    }
+    return undefined;
+  }, [showEveningNudge]);
 
   /* ---------------- chart data ---------------- */
   const earningsChartData = useMemo(() => {
@@ -622,7 +868,7 @@ export default function App() {
       {celebrate && <Confetti />}
       {celebrate && (
         <div style={celebrateBanner}>
-          <Check size={18} /> {celebrate} — paid off! 🎉
+          <Trophy size={18} /> {celebrate} 🎉
         </div>
       )}
       {toast && <div style={toastStyle}>{toast}</div>}
@@ -654,16 +900,61 @@ export default function App() {
 
         {tab === "home" && (
           <>
+            {showEveningNudge && (
+              <EveningNudge
+                shortfall={Math.max(0, totalDailyAim - earnedToday)}
+                onDismiss={() => setNudgeDismissed(true)}
+                onEnablePush={() => {
+                  if (typeof Notification !== "undefined") Notification.requestPermission();
+                }}
+              />
+            )}
             {alerts.length > 0 && <AlertsBanner alerts={alerts} />}
+            <CountdownCard
+              days={daysToFree}
+              weeks={weeksToFree}
+              freeISO={projectedFreeISO}
+              remaining={remainingDebt}
+              pctPaid={pctPaid}
+            />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <StreakCard streak={streak} target={totalDailyAim || baseDaily} />
+              <GasNetCard earnedToday={earnedToday} gasToday={gasToday} gasMonth={gasThisMonth} net={netAfterFuelToday} />
+            </div>
             <DailyTargetCard
               planMonth={planMonth}
               earnedToday={earnedToday}
               baseDaily={baseDaily}
               adjustedDaily={adjustedDaily}
+              dailyGasBudget={dailyGasBudget}
               runningSurplus={runningSurplus}
               daysRemaining={daysRemainingIncl}
               pastShortfall={pastShortfall}
               dailyCatchUpBump={dailyCatchUpBump}
+            />
+            <ShiftStatsCard
+              effectiveHourly={effectiveHourly}
+              hoursThisMonth={hoursThisMonth}
+              earnedThisMonth={earnedThisMonth}
+              bestDays={bestDays}
+            />
+            <PaymentScheduleCard
+              debts={debts}
+              today={today}
+              method={settings.payoffMethod}
+              leftoverForExtraDebt={leftoverForExtraDebt}
+              buffer={buffer}
+              bufferGoal={settings.bufferGoal}
+              available={availableAfterTaxAndExpenses}
+              onMarkPaid={logPayment}
+            />
+            <WeeklyReviewCard
+              today={today}
+              earnings={earnings}
+              baseDaily={baseDaily}
+              adjustedDaily={adjustedDaily}
+              planMonth={planMonth}
+              incomeOf={incomeOf}
             />
             <Hero
               remaining={remainingDebt}
@@ -674,6 +965,14 @@ export default function App() {
               planFreeISO={plan.freeDate}
               paceDelta={paceDelta}
             />
+            <WhatIfCard
+              extra={whatIfExtra}
+              setExtra={setWhatIfExtra}
+              whatIfDate={whatIfDate}
+              remaining={remainingDebt}
+              baselineDaily={overallDailyAvg || baseDaily}
+            />
+            <InterestDragCard debts={debts} />
             <SmartPayoffCard
               debts={debts}
               today={today}
@@ -681,6 +980,8 @@ export default function App() {
               buffer={buffer}
               bufferGoal={settings.bufferGoal}
               leftoverForExtraDebt={leftoverForExtraDebt}
+              method={settings.payoffMethod}
+              onMethodChange={(m) => setSettings((s) => ({ ...s, payoffMethod: m }))}
             />
             <NetProjectionCard
               projectedGross={projectedGrossMonth}
@@ -701,8 +1002,14 @@ export default function App() {
               baseline={settings.monthlyBaseline}
               hasPlan={!!planMonth}
             />
+            <MonthReportCard onShare={shareMonthReport} curMonth={curMonth} earned={earnedThisMonth} spent={spentThisMonth} />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <TaxCard taxReserve={taxReserve} rate={settings.taxRate} totalIncome={totalIncome} />
+              <TaxWalletCard
+                wallet={taxWallet}
+                expected={taxReserve}
+                rate={settings.taxRate}
+                onWithdraw={withdrawTax}
+              />
               <BufferCard buffer={buffer} goal={settings.bufferGoal} onFund={fundBuffer} />
             </div>
             <QuickLog onEarn={addEarning} onExpense={addExpense} />
@@ -729,25 +1036,15 @@ export default function App() {
         )}
 
         {tab === "settings" && (
-          <>
-            <SectionHeading>Bank connections</SectionHeading>
-            <PlaidConnect
-              debts={debts}
-              setDebts={setDebts}
-              today={today}
-              flash={flash}
-              styles={{ card, btnPrimary, btnGhost, FONT_MONO, FONT_DISP, C, SectionLabel }}
-            />
-            <SettingsView
-              settings={settings}
-              setSettings={setSettings}
-              onExport={exportJSON}
-              onImportClick={() => importInputRef.current?.click()}
-              onReset={resetAll}
-              onSignOut={cloudEnabled ? handleSignOut : null}
-              accountEmail={session?.user?.email || null}
-            />
-          </>
+          <SettingsView
+            settings={settings}
+            setSettings={setSettings}
+            onExport={exportJSON}
+            onImportClick={() => importInputRef.current?.click()}
+            onReset={resetAll}
+            onSignOut={cloudEnabled ? handleSignOut : null}
+            accountEmail={session?.user?.email || null}
+          />
         )}
       </div>
 
@@ -828,11 +1125,11 @@ function LoginScreen({ onSignedIn }) {
           <div style={badgeIcon}><Car size={16} color={C.asphalt} /></div>
           <div>
             <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 20, letterSpacing: -0.4 }}>Debt Destroyer</div>
-            <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint, letterSpacing: 1.1, marginTop: 2 }}>SECURE ACCESS</div>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint, letterSpacing: 1.1, marginTop: 2 }}>OWNER ACCESS</div>
           </div>
         </div>
         <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: C.muted, lineHeight: 1.5, margin: "14px 0 18px" }}>
-          Sign in to unlock your live cloud dashboard. Data is blocked without a valid session.
+          Private owner login only. New account signup is turned off.
         </div>
 
         <Field label="Email">
@@ -841,7 +1138,7 @@ function LoginScreen({ onSignedIn }) {
             autoComplete="username"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@email.com"
+            placeholder="debtkiller.owner@gmail.com"
             style={input}
             disabled={busy || locked}
           />
@@ -854,7 +1151,7 @@ function LoginScreen({ onSignedIn }) {
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••••••"
+              placeholder="••••••••"
               style={{ ...input, paddingRight: 72 }}
               disabled={busy || locked}
             />
@@ -902,11 +1199,11 @@ function LoginScreen({ onSignedIn }) {
             opacity: busy || locked ? 0.65 : 1,
           }}
         >
-          <Shield size={15} /> {busy ? "Checking…" : "Unlock dashboard"}
+          <Shield size={15} /> {busy ? "Signing in…" : "Sign in"}
         </button>
 
         <div style={{ marginTop: 14, fontFamily: FONT_MONO, fontSize: 10, color: C.faint, lineHeight: 1.5, textAlign: "center" }}>
-          Protected by Supabase Auth · hashed passwords · rate-limited · DB locked to signed-in users
+          Only debtkiller.owner@gmail.com can access this dashboard
         </div>
       </form>
     </div>
@@ -1084,52 +1381,241 @@ function Road({ pct }) {
 }
 
 
-function rankDebtsToKill(debts, todayISODate) {
+function rankDebtsToKill(debts, todayISODate, method = "avalanche") {
   const active = debts.filter((d) => !d.paid && asMoney(d.balance) > 0.005);
   return active
     .map((d) => {
       const reasons = [];
       let score = 0;
       const bal = asMoney(d.balance);
+      const apr = debtApr(d);
+      const drag = monthlyInterestOf(d);
+
       if (d.deadline) {
         const days = daysBetween(todayISODate, d.deadline);
         if (days <= 0) {
-          score += 1000;
+          score += 10000;
           reasons.push("Due today — pay first");
         } else if (days <= 7) {
-          score += 850 - days * 25;
+          score += 8000 - days * 40;
           reasons.push(`Hard deadline in ${days} day${days === 1 ? "" : "s"}`);
         } else if (days <= 21) {
-          score += 420 - days * 5;
+          score += 2000 - days * 10;
           reasons.push(`Deadline in ${days} days`);
         }
       }
-      if (d.group === "card") {
-        score += 140;
-        reasons.push("Interest-bearing card (costliest to keep)");
-      } else if (d.group === "loan") {
-        score += 70;
-        if (d.min) reasons.push(`Fixed loan · min ${usd0(d.min)}/mo`);
-        else reasons.push("Fixed installment loan");
+
+      if (method === "snowball") {
+        // Smaller balances first (invert balance into score)
+        score += Math.max(0, 5000 - bal);
+        reasons.push(bal <= 400 ? "Smallest balance — snowball win" : "Snowball: knock out smaller balances");
       } else {
-        score += 20;
-        reasons.push("Personal debt");
+        // Avalanche: highest APR / monthly drag first
+        score += apr * 80 + drag * 12;
+        if (apr > 0) reasons.push(`${apr.toFixed(apr % 1 ? 2 : 0)}% APR · ~${usd0(drag)}/mo interest`);
+        else reasons.push("No interest — lower avalanche priority");
       }
-      if (bal > 0 && bal <= 400) {
-        score += 110;
-        reasons.push("Small balance — quick kill");
-      } else if (bal <= 900) {
-        score += 55;
-        reasons.push("Manageable balance for a fast win");
+
+      if (d.group === "card" && method === "avalanche") {
+        score += 40;
       }
       if (!reasons.length) reasons.push("Next in payoff queue");
-      return { d, score, reasons: reasons.slice(0, 2) };
+      return { d, score, reasons: reasons.slice(0, 2), apr, drag };
     })
-    .sort((a, b) => b.score - a.score || a.d.balance - b.d.balance);
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (method === "snowball") return a.d.balance - b.d.balance;
+      return debtApr(b.d) - debtApr(a.d) || a.d.balance - b.d.balance;
+    });
 }
 
-function SmartPayoffCard({ debts, today, available, buffer, bufferGoal, leftoverForExtraDebt }) {
-  const ranked = rankDebtsToKill(debts, today);
+function InterestDragCard({ debts }) {
+  const active = debts.filter((d) => !d.paid && asMoney(d.balance) > 0.005);
+  const rows = active
+    .map((d) => ({ d, drag: monthlyInterestOf(d), apr: debtApr(d) }))
+    .filter((r) => r.drag > 0.05)
+    .sort((a, b) => b.drag - a.drag);
+  const total = rows.reduce((s, r) => s + r.drag, 0);
+  if (!rows.length) return null;
+  return (
+    <section style={{ ...card, borderColor: C.amberDim }}>
+      <div style={rowBetween}>
+        <SectionLabel icon={Flame}>INTEREST DRAG</SectionLabel>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.amber }}>THIS MONTH</span>
+      </div>
+      <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 26, color: C.amber, letterSpacing: -0.8, marginTop: 8 }}>
+        ~{usd0(total)}
+      </div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginTop: 2 }}>
+        Rough interest leaking every month if balances stay put
+      </div>
+      <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 7 }}>
+        {rows.slice(0, 4).map(({ d, drag, apr }) => (
+          <div key={d.id} style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+            <span style={{ fontFamily: FONT_DISP, fontSize: 12.5, color: C.text }}>
+              {d.name}
+              <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint, marginLeft: 6 }}>{apr}% APR</span>
+            </span>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.amber }}>~{usd(drag)}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PaymentScheduleCard({
+  debts,
+  today,
+  method,
+  leftoverForExtraDebt,
+  buffer,
+  bufferGoal,
+  available,
+  onMarkPaid,
+}) {
+  const ranked = rankDebtsToKill(debts, today, method);
+  const next = ranked[0]?.d || null;
+  const bufferGap = Math.max(0, asMoney(bufferGoal) - asMoney(buffer));
+  const safeToPay = Math.max(0, available - bufferGap);
+  let amount = 0;
+  let dueISO = today;
+  if (next) {
+    amount = Math.min(
+      asMoney(next.balance),
+      Math.max(
+        asMoney(next.min) || 0,
+        Math.max(safeToPay, leftoverForExtraDebt || 0, 50)
+      )
+    );
+    if (amount < 1) amount = Math.min(asMoney(next.balance), asMoney(next.min) || Math.min(100, asMoney(next.balance)));
+    dueISO = nextFridayISO(today);
+    if (next.deadline) {
+      const days = daysBetween(today, next.deadline);
+      if (days >= 0 && days <= 7) dueISO = next.deadline;
+    }
+  }
+  const alreadyPaidToward = !!(
+    next &&
+    (next.payments || []).some((p) => p.date >= today && p.date <= dueISO && asMoney(p.amount) >= amount * 0.9)
+  );
+  const [done, setDone] = useState(alreadyPaidToward);
+  useEffect(() => {
+    setDone(alreadyPaidToward);
+  }, [alreadyPaidToward, next?.id, dueISO, amount]);
+
+  if (!next) return null;
+
+  const dueLabel = dueISO === today ? "today" : `by ${weekdayLong(dueISO)}`;
+
+  if (done) {
+    return (
+      <section style={{ ...card, borderColor: C.greenDim }}>
+        <SectionLabel icon={CalendarCheck}>PAYMENT SCHEDULE</SectionLabel>
+        <div style={{ marginTop: 10, fontFamily: FONT_DISP, fontWeight: 600, fontSize: 15, color: C.green }}>
+          Marked paid — nice hit on {next.name}
+        </div>
+        <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginTop: 4 }}>
+          Next target refreshes after balances update.
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section
+      style={{
+        ...card,
+        borderColor: C.lane,
+        background: `radial-gradient(120% 90% at 0% 0%, rgba(255,229,102,.12) 0%, ${C.surface} 55%)`,
+      }}
+    >
+      <SectionLabel icon={CalendarCheck}>PAYMENT SCHEDULE</SectionLabel>
+      <div style={{ marginTop: 10, fontFamily: FONT_DISP, fontWeight: 700, fontSize: 17, color: C.text, letterSpacing: -0.3, lineHeight: 1.35 }}>
+        Pay {usd0(amount)} on {next.name} {dueLabel}
+      </div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginTop: 6, lineHeight: 1.45 }}>
+        {method === "snowball" ? "Snowball pick" : "Avalanche pick"}
+        {debtApr(next) > 0 ? ` · ${debtApr(next)}% APR` : ""} · {usd(next.balance)} left
+      </div>
+      <button
+        type="button"
+        onClick={() => {
+          onMarkPaid(next.id, amount);
+          setDone(true);
+        }}
+        style={{ ...btnPrimary, width: "100%", marginTop: 14 }}
+      >
+        <Check size={15} /> Mark paid
+      </button>
+    </section>
+  );
+}
+
+function WeeklyReviewCard({ today, earnings, baseDaily, adjustedDaily, planMonth, incomeOf }) {
+  const { start, end, isSunday } = weekWindow(today);
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const date = addDaysISO(start, i);
+    if (date > today) break;
+    const earned = earnings.filter((e) => e.date === date).reduce((s, e) => s + incomeOf(e), 0);
+    const target = baseDaily || 0;
+    days.push({ date, earned, target, slipped: target > 0 && earned + 0.5 < target });
+  }
+  const weekEarned = days.reduce((s, d) => s + d.earned, 0);
+  const weekTarget = days.reduce((s, d) => s + d.target, 0);
+  const slipped = days.filter((d) => d.slipped);
+  const nextWeekDaily = planMonth ? adjustedDaily : baseDaily;
+  if (!planMonth && weekEarned <= 0) return null;
+
+  return (
+    <section
+      style={{
+        ...card,
+        borderColor: isSunday ? C.blue : C.line,
+        background: isSunday
+          ? `linear-gradient(145deg, ${C.surface2}, ${C.surface})`
+          : C.surface,
+      }}
+    >
+      <div style={rowBetween}>
+        <SectionLabel icon={BarChart3}>{isSunday ? "SUNDAY REVIEW" : "WEEKLY PACE"}</SectionLabel>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint }}>
+          {weekdayShort(start)}–{weekdayShort(end)}
+        </span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+        <div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint }}>EARNED</div>
+          <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 20, color: weekEarned >= weekTarget ? C.green : C.text }}>
+            {usd0(weekEarned)}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint }}>TARGET</div>
+          <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 20, color: C.muted }}>
+            {usd0(weekTarget)}
+          </div>
+        </div>
+      </div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginTop: 10, lineHeight: 1.5 }}>
+        {slipped.length === 0
+          ? "No slipped days this week — keep the streak."
+          : `Slipped ${slipped.length} day${slipped.length === 1 ? "" : "s"}: ${slipped.map((d) => weekdayShort(d.date)).join(", ")}.`}
+      </div>
+      <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${C.lineSoft}` }}>
+        <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint, letterSpacing: 1 }}>NEXT WEEK'S NUMBER</div>
+        <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 18, color: C.lane, marginTop: 4 }}>
+          {usd0(nextWeekDaily)}
+          <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, fontWeight: 500 }}> / day</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SmartPayoffCard({ debts, today, available, buffer, bufferGoal, leftoverForExtraDebt, method, onMethodChange }) {
+  const ranked = rankDebtsToKill(debts, today, method);
   if (!ranked.length) return null;
   const top = ranked[0];
   const next = top.d;
@@ -1137,17 +1623,32 @@ function SmartPayoffCard({ debts, today, available, buffer, bufferGoal, leftover
   const safeToPay = Math.max(0, available - bufferGap);
   const suggested = Math.min(asMoney(next.balance), Math.max(safeToPay, leftoverForExtraDebt || 0));
   const runners = ranked.slice(1, 3);
+  const monthlyExtra = Math.max(suggested, leftoverForExtraDebt || 0, 200);
+  const avalanche = simulatePayoff(debts, "avalanche", monthlyExtra);
+  const snowball = simulatePayoff(debts, "snowball", monthlyExtra);
+  const interestSaved = Math.max(0, snowball.interest - avalanche.interest);
+  const activeMethod = method === "snowball" ? snowball : avalanche;
+  const otherMethod = method === "snowball" ? avalanche : snowball;
+  const vsOther = otherMethod.interest - activeMethod.interest;
+
   return (
     <section style={{ ...card, borderColor: C.blue, background: `linear-gradient(145deg, ${C.surface}, ${C.surface2})` }}>
       <div style={rowBetween}>
         <SectionLabel icon={Lightbulb}>KILL THIS FIRST</SectionLabel>
-        <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.blue }}>AI PRIORITY</span>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.blue }}>
+          {method === "snowball" ? "SNOWBALL" : "AVALANCHE"}
+        </span>
       </div>
-      <div style={{ marginTop: 9, fontFamily: FONT_DISP, fontWeight: 700, fontSize: 17, color: C.text }}>
+      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <TogglePill on={method === "avalanche"} onClick={() => onMethodChange("avalanche")}>Avalanche</TogglePill>
+        <TogglePill on={method === "snowball"} onClick={() => onMethodChange("snowball")}>Snowball</TogglePill>
+      </div>
+      <div style={{ marginTop: 12, fontFamily: FONT_DISP, fontWeight: 700, fontSize: 17, color: C.text }}>
         {next.name}
       </div>
       <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.lane, marginTop: 3 }}>
         {usd(next.balance)} left
+        {debtApr(next) > 0 ? ` · ${debtApr(next)}% APR · ~${usd0(monthlyInterestOf(next))}/mo` : ""}
       </div>
       <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 5 }}>
         {top.reasons.map((r) => (
@@ -1162,6 +1663,20 @@ function SmartPayoffCard({ debts, today, available, buffer, bufferGoal, leftover
           : suggested > 0
             ? `Safe strike amount now: about ${usd0(suggested)} after tax, expenses, and buffer.`
             : "Log more income (or cut spend) to unlock a safe payment amount."}
+      </div>
+      <div style={{ marginTop: 10, padding: "10px 11px", borderRadius: 10, background: C.asphalt, border: `1px solid ${C.lineSoft}` }}>
+        <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint, letterSpacing: 1 }}>INTEREST SAVED</div>
+        <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 15, color: interestSaved > 1 ? C.green : C.muted, marginTop: 4 }}>
+          Avalanche saves ~{usd0(interestSaved)} vs snowball
+        </div>
+        <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint, marginTop: 4, lineHeight: 1.4 }}>
+          Rough sim at ~{usd0(monthlyExtra)}/mo extra
+          {vsOther > 1 && method === "snowball"
+            ? ` · switching to avalanche cuts ~${usd0(vsOther)} interest`
+            : method === "avalanche" && interestSaved > 1
+              ? " · highest-APR first bleeds less over time"
+              : ""}
+        </div>
       </div>
       {runners.length > 0 && (
         <div style={{ marginTop: 12 }}>
@@ -1221,7 +1736,17 @@ function ProjRow({ label, value, tone = C.text, bold }) {
   );
 }
 
-function DailyTargetCard({ planMonth, earnedToday, baseDaily, adjustedDaily, runningSurplus, daysRemaining, pastShortfall, dailyCatchUpBump }) {
+function DailyTargetCard({
+  planMonth,
+  earnedToday,
+  baseDaily,
+  adjustedDaily,
+  dailyGasBudget = 0,
+  runningSurplus,
+  daysRemaining,
+  pastShortfall,
+  dailyCatchUpBump,
+}) {
   if (!planMonth) {
     return (
       <section style={card}>
@@ -1231,10 +1756,13 @@ function DailyTargetCard({ planMonth, earnedToday, baseDaily, adjustedDaily, run
       </section>
     );
   }
-  const hit = earnedToday >= adjustedDaily && adjustedDaily > 0;
+  const gas = asMoney(dailyGasBudget);
+  const debtAim = adjustedDaily || 0;
+  const totalAim = debtAim + gas;
+  const hit = earnedToday >= totalAim && totalAim > 0;
   const ahead = runningSurplus >= 0;
-  const pct = adjustedDaily > 0 ? Math.min(100, (earnedToday / adjustedDaily) * 100) : 0;
-  const remaining = Math.max(0, adjustedDaily - earnedToday);
+  const pct = totalAim > 0 ? Math.min(100, (earnedToday / totalAim) * 100) : 0;
+  const remaining = Math.max(0, totalAim - earnedToday);
   const redistributing = pastShortfall > 0.5;
   return (
     <section
@@ -1271,7 +1799,7 @@ function DailyTargetCard({ planMonth, earnedToday, baseDaily, adjustedDaily, run
               Today's target
             </div>
             <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint, marginTop: 1 }}>
-              {daysRemaining} days left · base {usd0(baseDaily)}
+              {daysRemaining} days left · debt base {usd0(baseDaily)}
             </div>
           </div>
         </div>
@@ -1294,7 +1822,7 @@ function DailyTargetCard({ planMonth, earnedToday, baseDaily, adjustedDaily, run
 
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginTop: 14 }}>
         <div>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.2, color: C.faint }}>AIM FOR</div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.2, color: C.faint }}>TOTAL TO EARN</div>
           <div
             style={{
               fontFamily: FONT_MONO,
@@ -1306,7 +1834,7 @@ function DailyTargetCard({ planMonth, earnedToday, baseDaily, adjustedDaily, run
               marginTop: 4,
             }}
           >
-            {usd0(adjustedDaily)}
+            {usd0(totalAim)}
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
@@ -1329,6 +1857,31 @@ function DailyTargetCard({ planMonth, earnedToday, baseDaily, adjustedDaily, run
         </div>
       </div>
 
+      <div
+        style={{
+          marginTop: 14,
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 8,
+          padding: "10px 11px",
+          borderRadius: 10,
+          background: C.asphalt,
+          border: `1px solid ${C.lineSoft}`,
+        }}
+      >
+        <div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 9.5, letterSpacing: 1, color: C.faint }}>DEBT TARGET</div>
+          <div style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: 16, color: C.text, marginTop: 3 }}>{usd0(debtAim)}</div>
+        </div>
+        <div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 9.5, letterSpacing: 1, color: C.amber }}>GAS MONEY</div>
+          <div style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: 16, color: C.amber, marginTop: 3 }}>{usd0(gas)}</div>
+        </div>
+      </div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.muted, marginTop: 8, lineHeight: 1.45 }}>
+        {usd0(debtAim)} debt + {usd0(gas)} gas = {usd0(totalAim)} total. Change gas in Settings anytime.
+      </div>
+
       {redistributing && (
         <div
           style={{
@@ -1343,21 +1896,12 @@ function DailyTargetCard({ planMonth, earnedToday, baseDaily, adjustedDaily, run
             lineHeight: 1.45,
           }}
         >
-          Missed {usd0(pastShortfall)} earlier this month → +{usd0(dailyCatchUpBump)}/day spread across {daysRemaining} remaining days.
+          Missed earlier days · +{usd0(dailyCatchUpBump)}/day catch-up built into debt target
         </div>
       )}
 
-      <div style={{ ...progTrack, height: 10, marginTop: 16, borderRadius: 8 }}>
-        <div
-          style={{
-            ...progFill,
-            width: `${pct}%`,
-            background: hit
-              ? `linear-gradient(90deg, ${C.greenDim}, ${C.green})`
-              : `linear-gradient(90deg, #8A7010, ${C.lane})`,
-            boxShadow: hit ? `0 0 12px ${C.green}` : `0 0 12px rgba(255,229,102,.35)`,
-          }}
-        />
+      <div style={{ ...progTrack, height: 8, marginTop: 14 }}>
+        <div style={{ ...progFill, width: `${pct}%`, background: hit ? C.green : C.lane }} />
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 7 }}>
         <span style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint }}>{pct.toFixed(0)}% of today</span>
@@ -1426,16 +1970,213 @@ function MonthlyDashboard({ curMonth, monthTarget, earnedThisMonth, projectedMon
   );
 }
 
-function TaxCard({ taxReserve, rate, totalIncome }) {
+function EveningNudge({ shortfall, onDismiss, onEnablePush }) {
+  return (
+    <section
+      style={{
+        ...card,
+        borderColor: C.amber,
+        background: `linear-gradient(135deg, ${C.amberDim}, ${C.surface})`,
+        marginBottom: 12,
+      }}
+    >
+      <div style={rowBetween}>
+        <SectionLabel icon={Bell}>EVENING NUDGE</SectionLabel>
+        <button type="button" onClick={onDismiss} style={{ ...btnSm, padding: 6 }} aria-label="Dismiss"><X size={13} /></button>
+      </div>
+      <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 16, color: C.text, marginTop: 8 }}>
+        Still {usd0(shortfall)} short today
+      </div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginTop: 4, lineHeight: 1.45 }}>
+        One more short shift keeps the streak alive.
+      </div>
+      {typeof Notification !== "undefined" && Notification.permission === "default" && (
+        <button type="button" onClick={onEnablePush} style={{ ...btnGhost, marginTop: 10, width: "100%" }}>
+          Enable reminders
+        </button>
+      )}
+    </section>
+  );
+}
+
+function CountdownCard({ days, weeks, freeISO, remaining, pctPaid }) {
+  return (
+    <section
+      style={{
+        ...card,
+        borderColor: C.greenDim,
+        background: `radial-gradient(120% 100% at 100% 0%, ${C.greenDim} 0%, ${C.surface} 55%)`,
+        boxShadow: "0 14px 40px rgba(61,220,151,.10)",
+      }}
+    >
+      <SectionLabel icon={CalendarDays}>DEBT-FREE COUNTDOWN</SectionLabel>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+        <div style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: 40, letterSpacing: -1.5, color: C.green, lineHeight: 1 }}>
+          {days}
+        </div>
+        <div>
+          <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 16, color: C.text }}>days left</div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginTop: 2 }}>
+            ~{weeks} weeks · {parseISO(freeISO).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+          </div>
+        </div>
+      </div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.faint, marginTop: 10 }}>
+        {usd0(remaining)} remaining · {pctPaid.toFixed(1)}% already killed
+      </div>
+    </section>
+  );
+}
+
+function StreakCard({ streak, target }) {
+  return (
+    <div style={{ ...card, marginBottom: 0, borderColor: streak > 0 ? C.greenDim : C.line }}>
+      <SectionLabel icon={Flame}>STREAK</SectionLabel>
+      <div style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: 28, color: streak > 0 ? C.green : C.muted, marginTop: 6 }}>
+        {streak}
+        <span style={{ fontSize: 12, color: C.faint, fontWeight: 500 }}> days</span>
+      </div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint, marginTop: 4, lineHeight: 1.4 }}>
+        Hitting {usd0(target)}/day
+      </div>
+    </div>
+  );
+}
+
+function GasNetCard({ earnedToday, gasToday, gasMonth, net }) {
   return (
     <div style={{ ...card, marginBottom: 0 }}>
-      <SectionLabel icon={Receipt}>TAX RESERVE</SectionLabel>
+      <SectionLabel icon={Fuel}>AFTER FUEL</SectionLabel>
+      <div style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: 22, color: net >= 0 ? C.text : C.red, marginTop: 6 }}>
+        {usd0(net)}
+      </div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint, marginTop: 4, lineHeight: 1.4 }}>
+        Today {usd0(earnedToday)} − gas {usd0(gasToday)}
+      </div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.amber, marginTop: 6 }}>
+        Gas this month {usd0(gasMonth)}
+      </div>
+    </div>
+  );
+}
+
+function ShiftStatsCard({ effectiveHourly, hoursThisMonth, earnedThisMonth, bestDays }) {
+  return (
+    <section style={card}>
+      <SectionLabel icon={Timer}>SHIFT STATS</SectionLabel>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 12 }}>
+        <div style={miniStat}>
+          <div style={miniLabel}>$/HR</div>
+          <div style={{ ...miniVal, color: C.lane }}>{effectiveHourly != null ? usd0(effectiveHourly) : "—"}</div>
+        </div>
+        <div style={miniStat}>
+          <div style={miniLabel}>HOURS</div>
+          <div style={miniVal}>{hoursThisMonth ? hoursThisMonth.toFixed(1) : "—"}</div>
+        </div>
+        <div style={miniStat}>
+          <div style={miniLabel}>GROSS</div>
+          <div style={{ ...miniVal, color: C.green }}>{usd0(earnedThisMonth)}</div>
+        </div>
+      </div>
+      {bestDays.length > 0 && (
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${C.lineSoft}` }}>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint, letterSpacing: 1, marginBottom: 6 }}>BEST DAYS</div>
+          {bestDays.slice(0, 3).map((d, i) => (
+            <div key={d.name} style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+              <span style={{ fontFamily: FONT_DISP, fontSize: 13, color: i === 0 ? C.lane : C.muted }}>
+                {i === 0 ? "★ " : ""}{d.name}
+              </span>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.text }}>
+                ~{usd0(d.avg)} · {d.count}d
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {!bestDays.length && (
+        <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.faint, marginTop: 10 }}>
+          Log shifts with hours to unlock $/hr and best days.
+        </div>
+      )}
+    </section>
+  );
+}
+
+function WhatIfCard({ extra, setExtra, whatIfDate, remaining, baselineDaily }) {
+  return (
+    <section style={{ ...card, borderColor: C.blue }}>
+      <SectionLabel icon={Zap}>WHAT IF</SectionLabel>
+      <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 16, color: C.text, marginTop: 8 }}>
+        +{usd0(extra)} more per day
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={150}
+        step={5}
+        value={extra}
+        onChange={(e) => setExtra(Number(e.target.value))}
+        style={{ width: "100%", marginTop: 12, accentColor: C.lane }}
+      />
+      <div style={{ display: "flex", justifyContent: "space-between", fontFamily: FONT_MONO, fontSize: 10, color: C.faint }}>
+        <span>$0</span><span>$150</span>
+      </div>
+      <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 10, background: C.asphalt, border: `1px solid ${C.lineSoft}` }}>
+        <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint }}>DEBT-FREE BY</div>
+        <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 18, color: C.green, marginTop: 4 }}>
+          {whatIfDate
+            ? parseISO(whatIfDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+            : "Need more daily net"}
+        </div>
+        <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.muted, marginTop: 4 }}>
+          On ~{usd0(baselineDaily + extra)}/day gross vs {usd0(remaining)} left
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MonthReportCard({ onShare, curMonth, earned, spent }) {
+  return (
+    <section style={card}>
+      <div style={rowBetween}>
+        <SectionLabel icon={Share2}>MONTH REPORT</SectionLabel>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint }}>{monthLabel(curMonth + "-01")}</span>
+      </div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>
+        Earned {usd0(earned)} · spent {usd0(spent)}. Share a one-screen summary with yourself or an accountability partner.
+      </div>
+      <button type="button" onClick={onShare} style={{ ...btnPrimary, width: "100%", marginTop: 12 }}>
+        <Share2 size={15} /> Share / copy report
+      </button>
+    </section>
+  );
+}
+
+function TaxWalletCard({ wallet, expected, rate, onWithdraw }) {
+  const [open, setOpen] = useState(false);
+  const [amt, setAmt] = useState("");
+  return (
+    <div style={{ ...card, marginBottom: 0, borderColor: C.amberDim }}>
+      <SectionLabel icon={Receipt}>TAX WALLET</SectionLabel>
       <div style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: 22, color: C.amber, marginTop: 6 }}>
-        {usd0(taxReserve)}
+        {usd0(wallet)}
       </div>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint, marginTop: 3 }}>
-        {(rate * 100).toFixed(0)}% of {usd0(totalIncome)} 1099 income
+      <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint, marginTop: 3, lineHeight: 1.4 }}>
+        Don't touch · {(rate * 100).toFixed(0)}% auto-parked
       </div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.muted, marginTop: 6 }}>
+        Expected set-aside {usd0(expected)}
+      </div>
+      {open ? (
+        <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+          <input value={amt} onChange={(e) => setAmt(e.target.value)} placeholder="$ paid IRS" inputMode="decimal" style={{ ...input, padding: "6px 8px", fontSize: 12 }} />
+          <button type="button" onClick={() => { onWithdraw(amt); setAmt(""); setOpen(false); }} style={{ ...btnSm, background: C.amber, color: C.asphalt, borderColor: C.amber }}><Check size={13} /></button>
+          <button type="button" onClick={() => setOpen(false)} style={btnSm}><X size={13} /></button>
+        </div>
+      ) : (
+        <button type="button" onClick={() => setOpen(true)} style={{ ...btnSm, marginTop: 8 }}>Paid tax</button>
+      )}
     </div>
   );
 }
@@ -1507,12 +2248,16 @@ function EarningForm({ onSubmit }) {
   const [date, setDate] = useState(todayISO());
   const [gross, setGross] = useState("");
   const [other, setOther] = useState("");
+  const [hours, setHours] = useState("");
   const [note, setNote] = useState("");
   const submit = () => {
     if (!gross && !other) return;
-    onSubmit({ date, gross, other, note });
-    setGross(""); setOther(""); setNote("");
+    onSubmit({ date, gross, other, hours, note });
+    setGross(""); setOther(""); setHours(""); setNote("");
   };
+  const g = asMoney(gross) + asMoney(other);
+  const h = Number(hours) || 0;
+  const rate = h > 0 ? g / h : null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
       <Field label="Date">
@@ -1522,14 +2267,22 @@ function EarningForm({ onSubmit }) {
         <Field label="Uber gross" flex>
           <input value={gross} onChange={(e) => setGross(e.target.value)} placeholder="$0.00" inputMode="decimal" style={input} />
         </Field>
-        <Field label="Other income" flex>
-          <input value={other} onChange={(e) => setOther(e.target.value)} placeholder="AI work…" inputMode="decimal" style={input} />
+        <Field label="Hours" flex>
+          <input value={hours} onChange={(e) => setHours(e.target.value)} placeholder="e.g. 8.5" inputMode="decimal" style={input} />
         </Field>
       </div>
+      <Field label="Other income">
+        <input value={other} onChange={(e) => setOther(e.target.value)} placeholder="AI / tips / 1099" inputMode="decimal" style={input} />
+      </Field>
+      {rate != null && (
+        <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.lane }}>
+          Effective {usd(rate)}/hr this shift
+        </div>
+      )}
       <Field label="Note (optional)">
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Busy Friday night" style={input} />
       </Field>
-      <button onClick={submit} style={btnPrimary}><Plus size={15} /> Save earnings</button>
+      <button onClick={submit} style={btnPrimary}><Plus size={15} /> Save shift</button>
     </div>
   );
 }
@@ -1664,7 +2417,8 @@ function DebtForm({ debt, onSubmit, onCancel }) {
   const [deadline, setDeadline] = useState(debt?.deadline || "");
   const [group, setGroup] = useState(debt?.group || "card");
   const [type, setType] = useState(debt?.type || "Interest-bearing");
-  const submit = () => onSubmit({ name, balance, min, deadline, group, type });
+  const [apr, setApr] = useState(debt?.apr ?? (debt?.group === "card" ? "22.99" : debt?.group === "loan" ? "9.99" : "0"));
+  const submit = () => onSubmit({ name, balance, min, deadline, group, type, apr });
   return (
     <section style={{ ...card, borderColor: C.greenDim, boxShadow: "0 14px 34px rgba(0,0,0,.24)" }}>
       <div style={rowBetween}>
@@ -1679,12 +2433,17 @@ function DebtForm({ debt, onSubmit, onCancel }) {
         <Field label="Current balance"><input value={balance} onChange={(e) => setBalance(e.target.value)} inputMode="decimal" placeholder="$0.00" style={input} /></Field>
         <Field label="Minimum / month"><input value={min} onChange={(e) => setMin(e.target.value)} inputMode="decimal" placeholder="Optional" style={input} /></Field>
         <Field label="Debt category">
-          <select value={group} onChange={(e) => setGroup(e.target.value)} style={input}>
+          <select value={group} onChange={(e) => {
+            const g = e.target.value;
+            setGroup(g);
+            if (!debt) setApr(g === "card" ? "22.99" : g === "loan" ? "9.99" : "0");
+          }} style={input}>
             <option value="card">Credit card</option><option value="loan">Loan</option><option value="personal">Personal debt</option>
           </select>
         </Field>
+        <Field label="APR %"><input value={apr} onChange={(e) => setApr(e.target.value)} inputMode="decimal" placeholder="0" style={input} /></Field>
         <Field label="Due date / payoff deadline"><input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} style={input} /></Field>
-        <div style={{ gridColumn: "1 / -1" }}><Field label="Description"><input value={type} onChange={(e) => setType(e.target.value)} placeholder="Interest-bearing, 24.99% APR" style={input} /></Field></div>
+        <div style={{ gridColumn: "1 / -1" }}><Field label="Description"><input value={type} onChange={(e) => setType(e.target.value)} placeholder="Interest-bearing" style={input} /></Field></div>
       </div>
       <div style={{ display: "flex", gap: 9, marginTop: 12 }}>
         <button onClick={submit} style={{ ...btnPrimary, flex: 1 }}><Save size={15} /> {debt ? "Save changes" : "Add debt"}</button>
@@ -1703,17 +2462,14 @@ function DebtCard({ d, today, onPay, onEdit, onDelete }) {
   const days = d.deadline ? daysBetween(today, d.deadline) : null;
   const urgent = days != null && days <= 7 && !d.paid;
   const soon = days != null && days <= 10 && !d.paid;
+  const apr = debtApr(d);
+  const drag = monthlyInterestOf(d);
   return (
     <div style={{ ...card, opacity: d.paid ? 0.72 : 1, borderColor: d.paid ? C.greenDim : urgent ? C.red : C.line }}>
       <div style={rowBetween}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
           {d.paid && <div style={paidBadge}><Check size={11} /> PAID</div>}
           <span style={{ fontFamily: FONT_DISP, fontWeight: 600, fontSize: 14.5, color: C.text, overflow: "hidden", textOverflow: "ellipsis" }}>{d.name}</span>
-          {d.plaidAccountId && (
-            <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: C.blue, border: `1px solid ${C.blue}`, borderRadius: 6, padding: "2px 5px" }}>
-              PLAID{d.plaidMask ? ` ···${d.plaidMask}` : ""}
-            </span>
-          )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
           {days != null && !d.paid && <span style={{ ...deadlineBadge, background: soon ? (urgent ? C.redDim : C.amberDim) : C.surface2, borderColor: soon ? (urgent ? C.red : C.amber) : C.line, color: soon ? (urgent ? C.red : C.amber) : C.muted }}>{days <= 0 ? "DUE TODAY" : `${days}D LEFT`}</span>}
@@ -1725,6 +2481,11 @@ function DebtCard({ d, today, onPay, onEdit, onDelete }) {
         <span style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint }}>of {usd(original)}</span>
         {d.min && <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint, marginLeft: "auto" }}>min {usd0(d.min)}/mo</span>}
       </div>
+      {!d.paid && drag > 0.05 && (
+        <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.amber, marginTop: 6 }}>
+          {apr}% APR · ~{usd(drag)} interest / mo
+        </div>
+      )}
       <div style={{ ...progTrack, height: 7, marginTop: 9 }}><div style={{ ...progFill, width: `${pct}%`, background: d.paid ? C.green : d.group === "personal" ? C.blue : C.green }} /></div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 9 }}>
         <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint }}>{d.type}</span>
@@ -1880,6 +2641,40 @@ function SettingsView({ settings, setSettings, onExport, onImportClick, onReset,
   const set = (k, v) => setSettings((s) => ({ ...s, [k]: v }));
   return (
     <div>
+      <SectionHeading>Bank connections</SectionHeading>
+      <section style={{ ...card, opacity: 0.92, borderStyle: "dashed" }}>
+        <div style={rowBetween}>
+          <SectionLabel icon={Landmark}>PLAID LINK</SectionLabel>
+          <span
+            style={{
+              fontFamily: FONT_MONO,
+              fontSize: 10,
+              letterSpacing: 1,
+              color: C.lane,
+              background: C.amberDim,
+              border: `1px solid ${C.amber}`,
+              borderRadius: 6,
+              padding: "3px 7px",
+            }}
+          >
+            COMING SOON
+          </span>
+        </div>
+        <div style={{ fontFamily: FONT_DISP, fontWeight: 600, fontSize: 15, color: C.text, marginTop: 10 }}>
+          Auto-import cards & loans
+        </div>
+        <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
+          Secure bank linking via Plaid is on the roadmap. For now, add balances manually in Debts — personal IOUs stay manual either way.
+        </div>
+        <button
+          type="button"
+          disabled
+          style={{ ...btnPrimary, width: "100%", marginTop: 14, opacity: 0.45, cursor: "not-allowed" }}
+        >
+          Connect with Plaid
+        </button>
+      </section>
+
       <SectionHeading>Plan</SectionHeading>
       <section style={card}>
         <SectionLabel>PAYOFF PLAN</SectionLabel>
@@ -1900,6 +2695,20 @@ function SettingsView({ settings, setSettings, onExport, onImportClick, onReset,
         </div>
       </section>
 
+      <SectionHeading>Payoff method</SectionHeading>
+      <section style={card}>
+        <SectionLabel>SNOWBALL VS AVALANCHE</SectionLabel>
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <TogglePill on={settings.payoffMethod !== "snowball"} onClick={() => set("payoffMethod", "avalanche")}>Avalanche</TogglePill>
+          <TogglePill on={settings.payoffMethod === "snowball"} onClick={() => set("payoffMethod", "snowball")}>Snowball</TogglePill>
+        </div>
+        <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginTop: 10, lineHeight: 1.5 }}>
+          {settings.payoffMethod === "snowball"
+            ? "Snowball: kill smallest balances first for quick wins."
+            : "Avalanche: kill highest APR first to cut interest drag."}
+        </div>
+      </section>
+
       <SectionHeading>Baselines</SectionHeading>
       <section style={card}>
         <NumberRow label="Monthly living cost" hint="Rent + car + living" value={settings.monthlyBaseline} onChange={(v) => set("monthlyBaseline", v)} prefix="$" />
@@ -1907,12 +2716,27 @@ function SettingsView({ settings, setSettings, onExport, onImportClick, onReset,
         <NumberRow label="Emergency buffer goal" hint="Car-repair reserve" value={settings.bufferGoal} onChange={(v) => set("bufferGoal", v)} prefix="$" last />
       </section>
 
+      <SectionHeading>Daily gas</SectionHeading>
+      <section style={card}>
+        <NumberRow
+          label="Gas money / day"
+          hint="Added on top of debt target so you know total to earn"
+          value={settings.dailyGasBudget ?? 40}
+          onChange={(v) => set("dailyGasBudget", Math.max(0, Number(v) || 0))}
+          prefix="$"
+          last
+        />
+        <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+          Home shows debt target + this gas amount = total to earn. Change it anytime if fuel prices shift.
+        </div>
+      </section>
+
       {onSignOut && (
         <>
           <SectionHeading>Account</SectionHeading>
           <section style={card}>
             <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginBottom: 11, lineHeight: 1.5 }}>
-              Signed in as <span style={{ color: C.text }}>{accountEmail || "owner"}</span>. Cloud data stays locked without this login.
+              Signed in as <span style={{ color: C.text }}>{accountEmail || "you"}</span>. This account’s debts and plan are private.
             </div>
             <button onClick={onSignOut} style={{ ...btnGhost, width: "100%", color: C.amber, borderColor: C.amberDim }}>
               Sign out

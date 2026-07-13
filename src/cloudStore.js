@@ -2,7 +2,17 @@ import { createClient } from "@supabase/supabase-js";
 
 const STORE_KEY = "debt-destroyer:v2";
 const LEGACY_KEY = "debt-destroyer:v1";
-const SHARED_ID = import.meta.env.VITE_APP_STATE_ID || "shared";
+/** Only this account may keep the pre-multiuser / seed debt list. */
+const OWNER_EMAIL = "debtkiller.owner@gmail.com";
+const LEAKED_SEED_MARKERS = [
+  "Credit Card 01",
+  "Credit Card 02",
+  "Lender Loan 01",
+  "Anusha (personal)",
+  "Mom (personal)",
+  "Sister (personal)",
+  "Dad (personal)",
+];
 const url = import.meta.env.VITE_SUPABASE_URL;
 const anonKey =
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
@@ -14,30 +24,101 @@ const supabase = cloudEnabled
       auth: {
         persistSession: true,
         autoRefreshToken: true,
-        detectSessionInUrl: false,
+        detectSessionInUrl: true,
         storage: typeof window !== "undefined" ? window.localStorage : undefined,
       },
     })
   : null;
 
-function loadLocal() {
+export function emptyAppState() {
+  return {
+    debts: [],
+    earnings: [],
+    expenses: [],
+    settings: {
+      monthlyBaseline: 3800,
+      activePlan: "A",
+      taxRate: 0.15,
+      bufferGoal: 500,
+      payoffMethod: "avalanche",
+      dailyGasBudget: 40,
+    },
+    buffer: 0,
+    taxWallet: 0,
+    milestonesSeen: [],
+  };
+}
+
+function localKey(userId) {
+  return userId ? `${STORE_KEY}:${userId}` : STORE_KEY;
+}
+
+function stateLooksPopulated(state) {
+  if (!state || typeof state !== "object") return false;
+  const debts = Array.isArray(state.debts) ? state.debts.length : 0;
+  const earnings = Array.isArray(state.earnings) ? state.earnings.length : 0;
+  const expenses = Array.isArray(state.expenses) ? state.expenses.length : 0;
+  return debts + earnings + expenses > 0 || Number(state.buffer) > 0;
+}
+
+function isOwnerAccount(email) {
+  return String(email || "").trim().toLowerCase() === OWNER_EMAIL;
+}
+
+/** Detect the old shared/seed dashboard that was wrongly copied onto other accounts. */
+function looksLikeLeakedOwnerSeed(state) {
+  if (!state || !Array.isArray(state.debts) || state.debts.length < 5) return false;
+  const names = new Set(state.debts.map((d) => String(d?.name || "")));
+  const hits = LEAKED_SEED_MARKERS.filter((n) => names.has(n)).length;
+  return hits >= 4;
+}
+
+function sanitizeStateForUser(state, email) {
+  if (!state || typeof state !== "object") return emptyAppState();
+  if (isOwnerAccount(email)) return state;
+  if (looksLikeLeakedOwnerSeed(state)) return emptyAppState();
+  return state;
+}
+
+function loadLocal(userId) {
+  if (!userId) return null;
   try {
-    const raw = localStorage.getItem(STORE_KEY) || localStorage.getItem(LEGACY_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const keyed = localStorage.getItem(localKey(userId));
+    return keyed ? JSON.parse(keyed) : null;
   } catch (error) {
     console.warn("Local backup could not be read", error);
     return null;
   }
 }
 
-function saveLocal(state) {
+function clearLegacyLocalBackups() {
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    localStorage.removeItem(STORE_KEY);
+    localStorage.removeItem(LEGACY_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function saveLocal(state, userId) {
+  try {
+    localStorage.setItem(localKey(userId), JSON.stringify(state));
     return true;
   } catch (error) {
     console.warn("Local backup could not be saved", error);
     return false;
   }
+}
+
+function cleanAuthInput(email, password, { minPassword = 8 } = {}) {
+  const cleanEmail = String(email || "").trim().toLowerCase();
+  const cleanPassword = String(password || "");
+  if (!cleanEmail || !cleanPassword) throw new Error("Enter email and password");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) throw new Error("Enter a valid email");
+  if (cleanPassword.length < minPassword) {
+    throw new Error(`Password must be at least ${minPassword} characters`);
+  }
+  return { cleanEmail, cleanPassword };
 }
 
 export async function getSession() {
@@ -57,10 +138,11 @@ export function onAuthChange(callback) {
 
 export async function signIn(email, password) {
   if (!cloudEnabled || !supabase) throw new Error("Cloud auth is not configured");
-  const cleanEmail = String(email || "").trim().toLowerCase();
-  const cleanPassword = String(password || "");
-  if (!cleanEmail || !cleanPassword) throw new Error("Enter email and password");
-  if (cleanPassword.length < 12) throw new Error("Password must be at least 12 characters");
+  const { cleanEmail, cleanPassword } = cleanAuthInput(email, password);
+
+  if (cleanEmail !== OWNER_EMAIL) {
+    throw new Error("Access restricted to the owner account only.");
+  }
 
   const { data, error } = await supabase.auth.signInWithPassword({
     email: cleanEmail,
@@ -71,34 +153,49 @@ export async function signIn(email, password) {
     if (msg.includes("invalid login") || msg.includes("invalid credentials")) {
       throw new Error("Wrong email or password");
     }
+    if (msg.includes("email not confirmed") || msg.includes("not confirmed")) {
+      throw new Error("Confirm your email first — check your inbox for the link.");
+    }
+    if (msg.includes("banned") || msg.includes("disabled")) {
+      throw new Error("This account is disabled.");
+    }
     if (msg.includes("rate") || msg.includes("too many")) {
       throw new Error("Too many attempts. Wait a minute and try again.");
     }
     throw new Error(error.message || "Sign in failed");
   }
-  return data.session;
+
+  const session = data.session;
+  if (!isOwnerAccount(session?.user?.email)) {
+    await supabase.auth.signOut();
+    throw new Error("Access restricted to the owner account only.");
+  }
+  return session;
 }
 
 export async function signOut() {
   if (!cloudEnabled || !supabase) return;
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
+  clearLegacyLocalBackups();
 }
 
-async function fetchCloudState() {
+async function fetchCloudState(userId) {
   const { data, error } = await supabase
     .from("app_state")
     .select("state, updated_at")
-    .eq("id", SHARED_ID)
+    .eq("id", userId)
     .maybeSingle();
   if (error) throw error;
   return data;
 }
 
-async function saveCloud(state) {
+/** Never read shared row from the browser — only SQL restore in Supabase. */
+
+async function saveCloud(state, userId) {
   const { error } = await supabase.from("app_state").upsert(
     {
-      id: SHARED_ID,
+      id: userId,
       state,
       updated_at: new Date().toISOString(),
     },
@@ -108,40 +205,69 @@ async function saveCloud(state) {
 }
 
 export async function loadAppState() {
-  const localState = loadLocal();
-  if (!cloudEnabled) return { state: localState, source: localState ? "local" : "empty" };
+  if (!cloudEnabled) {
+    const localState = loadLocal(null);
+    return { state: localState, source: localState ? "local" : "empty" };
+  }
 
   const session = await getSession();
-  if (!session) return { state: null, source: "auth-required" };
+  if (!session?.user?.id) return { state: null, source: "auth-required" };
+  const userId = session.user.id;
+  const email = session.user.email;
 
   try {
-    const data = await fetchCloudState();
+    const data = await fetchCloudState(userId);
+    if (data?.state && typeof data.state === "object" && stateLooksPopulated(data.state)) {
+      const cleaned = sanitizeStateForUser(data.state, email);
+      if (cleaned !== data.state && !stateLooksPopulated(cleaned)) {
+        // Wipe leaked owner copy from this non-owner account
+        await saveCloud(cleaned, userId);
+        saveLocal(cleaned, userId);
+        return { state: cleaned, source: "cloud-purged" };
+      }
+      saveLocal(cleaned, userId);
+      return { state: cleaned, source: "cloud" };
+    }
+
+    const localState = loadLocal(userId);
+    if (localState && stateLooksPopulated(localState)) {
+      const cleaned = sanitizeStateForUser(localState, email);
+      if (!stateLooksPopulated(cleaned) && !isOwnerAccount(email)) {
+        await saveCloud(cleaned, userId);
+        saveLocal(cleaned, userId);
+        return { state: cleaned, source: "local-purged" };
+      }
+      await saveCloud(cleaned, userId);
+      saveLocal(cleaned, userId);
+      return { state: cleaned, source: "local" };
+    }
+
     if (data?.state && typeof data.state === "object") {
-      saveLocal(data.state);
-      return { state: data.state, source: "cloud" };
+      const cleaned = sanitizeStateForUser(data.state, email);
+      saveLocal(cleaned, userId);
+      return { state: cleaned, source: "cloud" };
     }
 
-    if (localState) {
-      await saveCloud(localState);
-      return { state: localState, source: "local" };
-    }
-
-    return { state: null, source: "empty" };
+    const starter = emptyAppState();
+    await saveCloud(starter, userId);
+    saveLocal(starter, userId);
+    return { state: starter, source: "cloud" };
   } catch (error) {
     console.warn("Cloud load failed; using local backup", error);
-    return { state: localState, source: localState ? "local" : "empty", error };
+    const localState = sanitizeStateForUser(loadLocal(userId), email);
+    return { state: localState || emptyAppState(), source: localState ? "local" : "empty", error };
   }
 }
 
 export async function saveAppState(state) {
-  const local = saveLocal(state);
+  const session = cloudEnabled ? await getSession() : null;
+  const userId = session?.user?.id || null;
+  const local = saveLocal(state, userId);
   if (!cloudEnabled) return { local, cloud: false };
-
-  const session = await getSession();
-  if (!session) return { local, cloud: false, error: new Error("Not signed in") };
+  if (!userId) return { local, cloud: false, error: new Error("Not signed in") };
 
   try {
-    await saveCloud(state);
+    await saveCloud(state, userId);
     return { local, cloud: true };
   } catch (error) {
     console.warn("Cloud save failed; local backup remains available", error);
@@ -149,31 +275,43 @@ export async function saveAppState(state) {
   }
 }
 
-/** Subscribe to live updates from other devices/browsers. Returns an unsubscribe fn. */
+/** Subscribe to live updates for the signed-in user's row. */
 export function subscribeAppState(onChange) {
   if (!cloudEnabled || !supabase) return () => {};
 
-  const channel = supabase
-    .channel(`app_state:${SHARED_ID}`)
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "app_state",
-        filter: `id=eq.${SHARED_ID}`,
-      },
-      (payload) => {
-        const next = payload.new?.state;
-        if (next && typeof next === "object") {
-          saveLocal(next);
-          onChange(next);
+  let channel = null;
+  let cancelled = false;
+
+  (async () => {
+    const session = await getSession();
+    const userId = session?.user?.id;
+    if (!userId || cancelled) return;
+
+    channel = supabase
+      .channel(`app_state:${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "app_state",
+          filter: `id=eq.${userId}`,
+        },
+        (payload) => {
+          const rowId = payload.new?.id;
+          if (rowId && rowId !== userId) return;
+          const next = payload.new?.state;
+          if (next && typeof next === "object") {
+            saveLocal(next, userId);
+            onChange(next);
+          }
         }
-      }
-    )
-    .subscribe();
+      )
+      .subscribe();
+  })();
 
   return () => {
-    supabase.removeChannel(channel);
+    cancelled = true;
+    if (channel) supabase.removeChannel(channel);
   };
 }
