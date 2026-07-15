@@ -35,6 +35,7 @@ export function emptyAppState() {
     debts: [],
     earnings: [],
     expenses: [],
+    recurring: [],
     settings: {
       monthlyBaseline: 3800,
       activePlan: "A",
@@ -42,6 +43,8 @@ export function emptyAppState() {
       bufferGoal: 500,
       payoffMethod: "avalanche",
       dailyGasBudget: 40,
+      softReminders: true,
+      customDailyTarget: null,
     },
     buffer: 0,
     taxWallet: 0,
@@ -81,10 +84,15 @@ function sanitizeStateForUser(state, email) {
 }
 
 function loadLocal(userId) {
-  if (!userId) return null;
   try {
     const keyed = localStorage.getItem(localKey(userId));
-    return keyed ? JSON.parse(keyed) : null;
+    if (keyed) return JSON.parse(keyed);
+    // Local-only / legacy fallbacks when reading the unscoped key
+    if (!userId) {
+      const legacy = localStorage.getItem(LEGACY_KEY);
+      return legacy ? JSON.parse(legacy) : null;
+    }
+    return null;
   } catch (error) {
     console.warn("Local backup could not be read", error);
     return null;

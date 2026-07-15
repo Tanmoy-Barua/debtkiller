@@ -4,8 +4,9 @@ import {
   Plus, Check, AlertTriangle, Download, Upload, Car, Flag, Target,
   PiggyBank, Receipt, Trash2, X, ChevronRight, Zap, Shield, Gauge,
   Search, ArrowUpDown, Lightbulb, Pencil, Save, CalendarCheck, Flame, Landmark,
-  Timer, Bell, Share2, Fuel, CalendarDays, Trophy
+  Timer, Bell, Share2, Fuel, CalendarDays, Trophy, Repeat, ClipboardList, FileSpreadsheet, Image, FileText
 } from "lucide-react";
+import { jsPDF } from "jspdf";
 import {
   LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine
@@ -91,6 +92,8 @@ const DEFAULT_SETTINGS = {
   bufferGoal: 500,
   payoffMethod: "avalanche", // "avalanche" | "snowball"
   dailyGasBudget: 40, // planned gas spend per day (Uber)
+  softReminders: true,
+  customDailyTarget: null, // override plan daily when set by What-If
 };
 
 /* ------------------------------------------------------------------ */
@@ -206,6 +209,239 @@ const weekWindow = (today) => {
 
 const incomeOfEntry = (e) => (Number(e.gross) || 0) + (Number(e.other) || 0);
 
+async function shareOrDownloadBlob(blob, filename, title, flash) {
+  const file = new File([blob], filename, { type: blob.type });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title, text: title });
+      flash?.("Shared");
+      return;
+    }
+  } catch (err) {
+    if (err?.name === "AbortError") return;
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+  flash?.("Downloaded — share the file");
+}
+
+function drawCloseOutImage({
+  monthTitle,
+  earned,
+  monthTarget,
+  spent,
+  debtPaid,
+  taxWallet,
+  plan,
+}) {
+  const W = 720;
+  const H = 520;
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  const rr = (x, y, w, h, r) => {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  };
+
+  // background
+  const bg = ctx.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0, "#0A1018");
+  bg.addColorStop(1, "#070B10");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // card
+  ctx.fillStyle = "#121820";
+  rr(28, 28, W - 56, H - 56, 24);
+  ctx.fill();
+  ctx.strokeStyle = "#2A3542";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = "#5B6875";
+  ctx.font = "600 18px 'JetBrains Mono', monospace";
+  ctx.fillText("MONTH CLOSE-OUT", 56, 78);
+  ctx.textAlign = "right";
+  ctx.fillText(monthTitle, W - 56, 78);
+  ctx.textAlign = "left";
+
+  ctx.fillStyle = "#F2F5F8";
+  ctx.font = "700 28px 'Space Grotesk', sans-serif";
+  ctx.fillText("Debt Destroyer", 56, 120);
+
+  const cells = [
+    { label: "EARNED", value: usd0(earned), color: "#3DDC97", x: 56, y: 150 },
+    { label: `PLAN ${plan} TARGET`, value: usd0(monthTarget || 0), color: "#F2F5F8", x: 366, y: 150 },
+    { label: "SPENT", value: usd0(spent), color: "#F5C451", x: 56, y: 280 },
+    { label: "DEBT PAID", value: usd0(debtPaid || 0), color: "#F2F5F8", x: 366, y: 280 },
+  ];
+  cells.forEach((c) => {
+    ctx.fillStyle = "#1A222C";
+    rr(c.x, c.y, 278, 106, 14);
+    ctx.fill();
+    ctx.fillStyle = "#5B6875";
+    ctx.font = "600 14px 'JetBrains Mono', monospace";
+    ctx.fillText(c.label, c.x + 18, c.y + 32);
+    ctx.fillStyle = c.color;
+    ctx.font = "700 36px 'JetBrains Mono', monospace";
+    ctx.fillText(c.value, c.x + 18, c.y + 78);
+  });
+
+  ctx.fillStyle = "#8A97A6";
+  ctx.font = "500 16px 'JetBrains Mono', monospace";
+  ctx.fillText(`Tax wallet ${usd0(taxWallet || 0)} · accountability snapshot`, 56, 440);
+  ctx.fillStyle = "#5B6875";
+  ctx.font = "500 13px 'JetBrains Mono', monospace";
+  ctx.fillText("debtkiller.vercel.app", 56, 468);
+
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), "image/png");
+  });
+}
+
+function buildDetailedCloseOutPdf(data) {
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 48;
+  let y = margin;
+  const line = (h = 16) => {
+    y += h;
+    if (y > pageH - margin) {
+      doc.addPage();
+      y = margin;
+    }
+  };
+  const write = (text, opts = {}) => {
+    const size = opts.size || 11;
+    const color = opts.color || [30, 40, 50];
+    const style = opts.style || "normal";
+    doc.setFont("helvetica", style);
+    doc.setFontSize(size);
+    doc.setTextColor(...color);
+    const maxW = pageW - margin * 2;
+    const rows = doc.splitTextToSize(String(text ?? ""), maxW);
+    rows.forEach((row) => {
+      if (y > pageH - margin) {
+        doc.addPage();
+        y = margin;
+      }
+      doc.text(row, opts.x || margin, y);
+      line(opts.leading || size + 5);
+    });
+  };
+  const section = (title) => {
+    line(10);
+    write(title, { size: 13, style: "bold", color: [20, 90, 70] });
+    doc.setDrawColor(200, 210, 220);
+    doc.line(margin, y - 10, pageW - margin, y - 10);
+    line(6);
+  };
+
+  write("Debt Destroyer — Month Close-Out", { size: 18, style: "bold", color: [10, 20, 30] });
+  write(data.monthTitle, { size: 12, color: [90, 100, 110] });
+  write(`Generated ${data.generatedAt}`, { size: 10, color: [120, 130, 140] });
+  line(6);
+
+  section("Snapshot");
+  write(`Earned: ${usd(data.earned)}   ·   Plan ${data.plan} target: ${usd(data.monthTarget || 0)}`);
+  write(`Spent: ${usd(data.spent)}   ·   Debt paid this month: ${usd(data.debtPaid || 0)}`);
+  write(`Tax wallet: ${usd(data.taxWallet || 0)} (expected set-aside ${usd(data.taxReserve || 0)} at ${(data.taxRate * 100).toFixed(0)}%)`);
+  write(`Gas: ${usd(data.gasMonth || 0)} actual vs ${usd(data.gasMonthBudget || 0)} budget (${usd0(data.dailyGasBudget || 0)}/day)`);
+  write(`Buffer: ${usd(data.buffer || 0)} / ${usd(data.bufferGoal || 0)}`);
+  write(`Debt remaining: ${usd(data.remainingDebt || 0)} · ${Number(data.pctPaid || 0).toFixed(1)}% paid overall`);
+  write(`Daily aim: ${usd0(data.baseDaily || 0)}${data.customDaily != null ? ` (custom override; plan base ${usd0(data.planDaily || 0)})` : ""}`);
+  write(`Pace: debt-free in ~${data.daysToFree} days (${data.weeksToFree} weeks) · streak ${data.streak} day(s)`);
+  if (data.effectiveHourly != null) write(`Effective hourly this month: ${usd(data.effectiveHourly)}/hr`);
+
+  section("Earnings this month (income logged)");
+  if (!data.monthEarnings.length) {
+    write("No earnings logged this month.");
+  } else {
+    data.monthEarnings.forEach((e) => {
+      const amt = incomeOfEntry(e);
+      const bits = [
+        e.date,
+        usd(amt),
+        asMoney(e.gross) ? `Uber ${usd(e.gross)}` : null,
+        asMoney(e.other) ? `other ${usd(e.other)}` : null,
+        e.hours ? `${e.hours}h` : null,
+        e.note || null,
+      ].filter(Boolean);
+      write(`• ${bits.join(" · ")}`);
+    });
+    write(`Total earnings: ${usd(data.earned)}`, { style: "bold" });
+  }
+
+  section("Expenses this month");
+  if (!data.monthExpenses.length) {
+    write("No expenses logged this month.");
+  } else {
+    const byCat = {};
+    data.monthExpenses.forEach((e) => {
+      const cat = e.category || "Other";
+      byCat[cat] = (byCat[cat] || 0) + asMoney(e.amount);
+    });
+    write("By category:");
+    Object.entries(byCat)
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([cat, amt]) => write(`  ${cat}: ${usd(amt)}`));
+    line(4);
+    write("Line items:");
+    data.monthExpenses.forEach((e) => {
+      write(`• ${e.date} · ${e.category || "Other"} · ${usd(e.amount)}${e.note ? ` · ${e.note}` : ""}`);
+    });
+    write(`Total spent: ${usd(data.spent)}`, { style: "bold" });
+  }
+
+  section("Debt payments this month");
+  if (!data.monthPayments.length) {
+    write("No debt payments marked this month.");
+  } else {
+    data.monthPayments.forEach((p) => {
+      write(`• ${p.date} · ${p.debtName} · ${usd(p.amount)}${p.note ? ` · ${p.note}` : ""}`);
+    });
+    write(`Total debt paid: ${usd(data.debtPaid || 0)}`, { style: "bold" });
+  }
+
+  section("Active debts snapshot");
+  if (!data.activeDebts.length) {
+    write("No active debts — you're clear.");
+  } else {
+    data.activeDebts.forEach((d) => {
+      write(
+        `• ${d.name}: ${usd(d.balance)} left` +
+          (d.min ? ` · min ${usd(d.min)}/mo` : "") +
+          (d.deadline ? ` · due ${d.deadline}` : "") +
+          (d.note ? ` · ${d.note}` : "")
+      );
+    });
+  }
+
+  section("How to read this");
+  write("Earned = Uber gross + other income logged in the Money tab.");
+  write("Plan target = monthly income goal from Plan A (aggressive) or Plan B (realistic).");
+  write("Spent = all expenses logged (Gas, Rent, Food, Car, Phone, Other).");
+  write("Debt paid = amounts applied to balances when you Mark paid / Log payment.");
+  write("Tax wallet = money auto-parked from income for taxes — don't spend it on living costs.");
+  write("Gas budget = daily gas allowance × days so far this month.");
+
+  line(18);
+  write("Built with Debt Destroyer · debtkiller.vercel.app", { size: 9, color: [140, 150, 160] });
+  return doc.output("blob");
+}
+
 /** Consecutive days (ending yesterday or today) that hit daily target. */
 function computeStreak(earnings, today, baseDaily, incomeOf) {
   if (!baseDaily || baseDaily <= 0) return 0;
@@ -268,8 +504,9 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState("home");
   const [debts, setDebts] = useState([]);
-  const [earnings, setEarnings] = useState([]); // {id,date,gross,other,note}
+  const [earnings, setEarnings] = useState([]); // {id,date,gross,other,hours?,note}
   const [expenses, setExpenses] = useState([]); // {id,date,amount,category,note}
+  const [recurring, setRecurring] = useState([]); // {id,amount,category,note,cadence,lastLogged?}
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [buffer, setBuffer] = useState(0);
   const [taxWallet, setTaxWallet] = useState(0);
@@ -294,12 +531,14 @@ export default function App() {
           originalBalance: asMoney(d.originalBalance ?? d.balance),
           apr: d.apr == null || d.apr === "" ? null : Number(d.apr),
           payments: Array.isArray(d.payments) ? d.payments : [],
+          note: d.note || "",
           paid: Boolean(d.paid) || asMoney(d.balance) <= 0.005,
         }))
       );
     }
     if (Array.isArray(s.earnings)) setEarnings(s.earnings);
     if (Array.isArray(s.expenses)) setExpenses(s.expenses);
+    if (Array.isArray(s.recurring)) setRecurring(s.recurring);
     if (s.settings) setSettings({ ...DEFAULT_SETTINGS, ...s.settings });
     if (typeof s.buffer === "number") setBuffer(s.buffer);
     if (typeof s.taxWallet === "number") setTaxWallet(Math.max(0, s.taxWallet));
@@ -418,11 +657,11 @@ export default function App() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setSyncStatus(cloudEnabled ? "saving" : "local");
     saveTimer.current = setTimeout(async () => {
-      const result = await saveAppState({ debts, earnings, expenses, settings, buffer, taxWallet, milestonesSeen });
+      const result = await saveAppState({ debts, earnings, expenses, recurring, settings, buffer, taxWallet, milestonesSeen });
       setSyncStatus(result.cloud ? "synced" : cloudEnabled ? "error" : "local");
     }, 700);
     return () => saveTimer.current && clearTimeout(saveTimer.current);
-  }, [debts, earnings, expenses, settings, buffer, taxWallet, milestonesSeen, loaded, session?.user?.id || session?.local]);
+  }, [debts, earnings, expenses, recurring, settings, buffer, taxWallet, milestonesSeen, loaded, session?.user?.id || session?.local]);
 
   const flash = (msg) => {
     setToast(msg);
@@ -477,10 +716,16 @@ export default function App() {
     .reduce((s, e) => s + incomeOf(e), 0);
 
   const monthTarget = planMonth ? planMonth.target : 0;
-  const baseDaily = planMonth ? planMonth.daily : 0;
+  const planDaily = planMonth ? planMonth.daily : 0;
+  const customDaily = settings.customDailyTarget != null ? asMoney(settings.customDailyTarget) : null;
+  const baseDaily = customDaily != null && customDaily > 0 ? customDaily : planDaily;
   const remainingMonthTarget = Math.max(0, monthTarget - earnedThisMonth);
   // Missed earlier days → leftover target is split evenly across remaining days (incl. today)
-  const adjustedDaily = planMonth ? remainingMonthTarget / daysRemainingIncl : 0;
+  const adjustedDaily = planMonth
+    ? (customDaily != null && customDaily > 0
+        ? customDaily
+        : remainingMonthTarget / daysRemainingIncl)
+    : 0;
   const pastDays = Math.max(0, dayNow - 1);
   const earnedBeforeToday = Math.max(0, earnedThisMonth - earnedToday);
   const expectedBeforeToday = baseDaily * pastDays;
@@ -530,6 +775,14 @@ export default function App() {
   const gasThisMonth = expenses
     .filter((e) => monthKey(e.date) === curMonth && String(e.category || "").toLowerCase() === "gas")
     .reduce((s, e) => s + asMoney(e.amount), 0);
+  const { start: weekStart } = weekWindow(today);
+  const dailyGasBudget = asMoney(settings.dailyGasBudget);
+  const gasThisWeek = expenses
+    .filter((e) => e.date >= weekStart && e.date <= today && String(e.category || "").toLowerCase() === "gas")
+    .reduce((s, e) => s + asMoney(e.amount), 0);
+  const daysIntoWeek = Math.max(1, daysBetween(weekStart, today) + 1);
+  const gasWeekBudget = dailyGasBudget * daysIntoWeek;
+  const gasMonthBudget = dailyGasBudget * dayNow;
   const netAfterFuelToday = earnedToday - gasToday;
   const hoursLogged = earnings.reduce((s, e) => s + (Number(e.hours) || 0), 0);
   const hoursThisMonth = earnings
@@ -538,7 +791,6 @@ export default function App() {
   const effectiveHourly =
     hoursThisMonth > 0 ? earnedThisMonth / hoursThisMonth : hoursLogged > 0 ? totalIncome / hoursLogged : null;
   const bestDays = useMemo(() => bestDaysOfWeek(earnings, incomeOfEntry), [earnings]);
-  const dailyGasBudget = asMoney(settings.dailyGasBudget);
   const totalDailyAim = (adjustedDaily || 0) + dailyGasBudget;
   const streak = computeStreak(earnings, today, totalDailyAim || baseDaily + dailyGasBudget, incomeOfEntry);
   const paidSoFar = Math.max(0, originalTotal - remainingDebt);
@@ -555,12 +807,53 @@ export default function App() {
   const showEveningNudge =
     !!planMonth && hourNow >= 18 && earnedToday + 0.5 < totalDailyAim && !nudgeDismissed;
 
-  /* deadline alerts */
-  const alerts = activeDebts
+  const paymentHistory = useMemo(() => {
+    const rows = [];
+    for (const d of debts) {
+      for (const p of d.payments || []) {
+        rows.push({
+          id: `${d.id}-${p.id}`,
+          debtId: d.id,
+          debtName: d.name,
+          date: p.date,
+          amount: asMoney(p.amount),
+          note: p.note || "",
+        });
+      }
+    }
+    return rows.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  }, [debts]);
+
+  /* deadline + soft reminders */
+  const deadlineAlerts = activeDebts
     .filter((d) => d.deadline)
-    .map((d) => ({ d, days: daysBetween(today, d.deadline) }))
+    .map((d) => ({ kind: "deadline", d, days: daysBetween(today, d.deadline) }))
     .filter((x) => x.days <= 10)
     .sort((a, b) => a.days - b.days);
+  const softAlerts = [];
+  if (settings.softReminders !== false) {
+    for (const d of activeDebts) {
+      if (asMoney(d.min) > 0 && d.deadline) {
+        const days = daysBetween(today, d.deadline);
+        if (days <= 5) {
+          softAlerts.push({
+            kind: "min",
+            d,
+            days,
+            message: `Min payment ~${usd0(d.min)} on ${d.name}`,
+          });
+        }
+      }
+    }
+    if (buffer + 0.5 < asMoney(settings.bufferGoal)) {
+      softAlerts.push({
+        kind: "buffer",
+        days: 99,
+        message: `Buffer ${usd0(buffer)} below goal ${usd0(settings.bufferGoal)}`,
+      });
+    }
+  }
+  const alerts = [...deadlineAlerts, ...softAlerts];
 
   /* ---------------- actions ---------------- */
   const addEarning = ({ date, gross, other, note, hours }) => {
@@ -578,6 +871,33 @@ export default function App() {
     setEarnings((p) => [entry, ...p]);
     if (taxBite > 0) setTaxWallet((w) => +(w + taxBite).toFixed(2));
     flash(taxBite > 0 ? `Logged · ${usd0(taxBite)} parked in tax wallet` : "Earnings logged");
+  };
+  const updateEarning = (id, changes) => {
+    const nextGross = asMoney(changes.gross);
+    const nextOther = asMoney(changes.other);
+    const nextIncome = nextGross + nextOther;
+    if (nextIncome <= 0) return flash("Enter an income amount");
+    const prev = earnings.find((e) => e.id === id);
+    if (!prev) return flash("Earning not found");
+    const prevIncome = asMoney(prev.gross) + asMoney(prev.other);
+    const taxDelta = +((nextIncome - prevIncome) * settings.taxRate).toFixed(2);
+    setEarnings((p) =>
+      p.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              date: changes.date || e.date,
+              gross: nextGross,
+              other: nextOther,
+              hours: Math.max(0, Number(changes.hours) || 0) || null,
+              note: (changes.note || "").trim(),
+            }
+          : e
+      )
+    );
+    if (taxDelta !== 0) setTaxWallet((w) => Math.max(0, +(w + taxDelta).toFixed(2)));
+    flash(taxDelta !== 0 ? `Earning updated · tax wallet ${taxDelta > 0 ? "+" : ""}${usd0(taxDelta)}` : "Earning updated");
+    return true;
   };
   const addExpense = ({ date, amount, category, note }) => {
     const value = asMoney(amount);
@@ -605,11 +925,46 @@ export default function App() {
     return true;
   };
   const removeEntry = (kind, id) => {
-    if (kind === "earn") setEarnings((p) => p.filter((e) => e.id !== id));
-    else setExpenses((p) => p.filter((e) => e.id !== id));
+    if (kind === "earn") {
+      const prev = earnings.find((e) => e.id === id);
+      if (prev) {
+        const income = asMoney(prev.gross) + asMoney(prev.other);
+        const taxBite = +(income * settings.taxRate).toFixed(2);
+        if (taxBite > 0) setTaxWallet((w) => Math.max(0, +(w - taxBite).toFixed(2)));
+      }
+      setEarnings((p) => p.filter((e) => e.id !== id));
+      flash("Earning removed");
+    } else {
+      setExpenses((p) => p.filter((e) => e.id !== id));
+    }
   };
 
-  const addDebt = ({ name, balance, min, deadline, type, group, apr }) => {
+  const addRecurring = ({ amount, category, note, cadence }) => {
+    const value = asMoney(amount);
+    if (value <= 0) return flash("Enter an amount");
+    setRecurring((p) => [
+      {
+        id: uid(),
+        amount: value,
+        category: category || "Other",
+        note: (note || "").trim(),
+        cadence: cadence === "weekly" ? "weekly" : "monthly",
+        lastLogged: null,
+      },
+      ...p,
+    ]);
+    flash("Recurring expense saved");
+    return true;
+  };
+  const removeRecurring = (id) => setRecurring((p) => p.filter((r) => r.id !== id));
+  const logRecurringNow = (id) => {
+    const r = recurring.find((x) => x.id === id);
+    if (!r) return;
+    addExpense({ date: today, amount: r.amount, category: r.category, note: r.note || `Recurring ${r.cadence}` });
+    setRecurring((p) => p.map((x) => (x.id === id ? { ...x, lastLogged: today } : x)));
+  };
+
+  const addDebt = ({ name, balance, min, deadline, type, group, apr, note }) => {
     const cleanName = (name || "").trim();
     const cleanBalance = asMoney(balance);
     if (!cleanName) return flash("Enter a debt name");
@@ -625,6 +980,7 @@ export default function App() {
       type: (type || "Interest-bearing").trim(),
       group: ["card", "loan", "personal"].includes(group) ? group : "card",
       apr: Number.isFinite(aprNum) ? Math.max(0, aprNum) : null,
+      note: (note || "").trim(),
       paid: false,
       payments: [],
       createdAt: today,
@@ -654,6 +1010,7 @@ export default function App() {
         type: (changes.type || "Interest-bearing").trim(),
         group: ["card", "loan", "personal"].includes(changes.group) ? changes.group : "card",
         apr: Number.isFinite(aprNum) ? Math.max(0, aprNum) : null,
+        note: (changes.note || "").trim(),
         paid: cleanBalance <= 0.005,
       };
     }));
@@ -666,14 +1023,16 @@ export default function App() {
     flash("Debt deleted");
   };
 
-  const logPayment = (debtId, amount) => {
+  const logPayment = (debtId, amount, note = "") => {
     const amt = +amount;
     if (!amt || amt <= 0) return;
     const paidBefore = Math.max(0, originalTotal - remainingDebt);
+    let appliedTotal = 0;
     setDebts((prev) =>
       prev.map((d) => {
         if (d.id !== debtId) return d;
         const applied = Math.min(asMoney(d.balance), amt);
+        appliedTotal = applied;
         const nb = Math.max(0, +(d.balance - applied).toFixed(2));
         const nowPaid = nb <= 0.005;
         if (nowPaid && !d.paid) {
@@ -684,11 +1043,14 @@ export default function App() {
           ...d,
           balance: nb,
           paid: nowPaid,
-          payments: [{ id: uid(), date: today, amount: applied }, ...(d.payments || [])],
+          payments: [
+            { id: uid(), date: today, amount: applied, note: (note || "").trim() },
+            ...(d.payments || []),
+          ],
         };
       })
     );
-    const paidAfter = paidBefore + amt;
+    const paidAfter = paidBefore + appliedTotal;
     const crossed = [];
     for (let k = 1000; k <= paidAfter; k += 1000) {
       if (paidBefore < k && paidAfter >= k && !milestonesSeen.includes(k)) crossed.push(k);
@@ -715,11 +1077,16 @@ export default function App() {
     setTaxWallet((w) => Math.max(0, +(w - a).toFixed(2)));
     flash(`Took ${usd0(a)} out of tax wallet`);
   };
+  const syncTaxWalletToExpected = () => {
+    const next = Math.max(0, +(taxReserve).toFixed(2));
+    setTaxWallet(next);
+    flash(`Tax wallet set to expected ${usd0(next)}`);
+  };
 
   /* export / import */
   const exportJSON = () => {
     const blob = new Blob(
-      [JSON.stringify({ debts, earnings, expenses, settings, buffer, taxWallet, milestonesSeen, exportedAt: new Date().toISOString() }, null, 2)],
+      [JSON.stringify({ debts, earnings, expenses, recurring, settings, buffer, taxWallet, milestonesSeen, exportedAt: new Date().toISOString() }, null, 2)],
       { type: "application/json" }
     );
     const url = URL.createObjectURL(blob);
@@ -729,6 +1096,28 @@ export default function App() {
     a.click();
     URL.revokeObjectURL(url);
     flash("Backup downloaded");
+  };
+  const exportCSV = () => {
+    const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const lines = ["type,date,amount,category_or_debt,note,gross,other,hours"];
+    for (const e of earnings) {
+      const amt = asMoney(e.gross) + asMoney(e.other);
+      lines.push(["earning", e.date, amt, "Income", e.note || "", e.gross, e.other, e.hours ?? ""].map(esc).join(","));
+    }
+    for (const e of expenses) {
+      lines.push(["expense", e.date, e.amount, e.category || "Other", e.note || "", "", "", ""].map(esc).join(","));
+    }
+    for (const row of paymentHistory) {
+      lines.push(["payment", row.date, row.amount, row.debtName, row.note || "", "", "", ""].map(esc).join(","));
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `debt-destroyer-${today}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    flash("CSV downloaded");
   };
   const importJSON = (file) => {
     const reader = new FileReader();
@@ -749,6 +1138,7 @@ export default function App() {
     setDebts(seedDebts());
     setEarnings([]);
     setExpenses([]);
+    setRecurring([]);
     setSettings(DEFAULT_SETTINGS);
     setBuffer(0);
     setTaxWallet(0);
@@ -756,34 +1146,90 @@ export default function App() {
     flash("Reset to starting data");
   };
 
-  const shareMonthReport = async () => {
-    const lines = [
-      `Debt Destroyer · ${monthLabel(curMonth + "-01")}`,
-      `Earned: ${usd0(earnedThisMonth)} / target ${usd0(monthTarget || 0)}`,
-      `Spent: ${usd0(spentThisMonth)} · Gas: ${usd0(gasThisMonth)}`,
-      `Tax wallet: ${usd0(taxWallet)}`,
-      `Debt left: ${usd0(remainingDebt)} · ${pctPaid.toFixed(1)}% paid`,
-      `Streak: ${streak} day${streak === 1 ? "" : "s"}`,
-      `Debt-free in ~${daysToFree} days (${weeksToFree} weeks)`,
-      effectiveHourly != null ? `Effective: ${usd(effectiveHourly)}/hr` : null,
-      bestDays[0] ? `Best day: ${bestDays[0].name} (~${usd0(bestDays[0].avg)} avg)` : null,
-    ].filter(Boolean).join("\n");
+  const applyWhatIfAsTarget = () => {
+    const daily = Math.round((overallDailyAvg || baseDaily) + whatIfExtra);
+    setSettings((s) => ({ ...s, customDailyTarget: Math.max(0, daily) }));
+    flash(`Daily target set to ${usd0(daily)}`);
+  };
+  const clearCustomDaily = () => {
+    setSettings((s) => ({ ...s, customDailyTarget: null }));
+    flash("Back to plan daily targets");
+  };
+
+  const closeOutPayload = () => {
+    const monthEarnings = earnings
+      .filter((e) => monthKey(e.date) === curMonth)
+      .sort((a, b) => (a.date < b.date ? -1 : 1));
+    const monthExpenses = expenses
+      .filter((e) => monthKey(e.date) === curMonth)
+      .sort((a, b) => (a.date < b.date ? -1 : 1));
+    const monthPayments = paymentHistory.filter((p) => monthKey(p.date) === curMonth);
+    return {
+      monthTitle: monthLabel(curMonth + "-01"),
+      generatedAt: new Date().toLocaleString("en-US"),
+      earned: earnedThisMonth,
+      spent: spentThisMonth,
+      debtPaid: debtPaidThisMonth,
+      taxWallet,
+      taxReserve,
+      taxRate: settings.taxRate,
+      monthTarget,
+      plan: settings.activePlan,
+      gasMonth: gasThisMonth,
+      gasMonthBudget,
+      dailyGasBudget,
+      buffer,
+      bufferGoal: settings.bufferGoal,
+      remainingDebt,
+      pctPaid,
+      baseDaily,
+      planDaily,
+      customDaily,
+      daysToFree,
+      weeksToFree,
+      streak,
+      effectiveHourly,
+      monthEarnings,
+      monthExpenses,
+      monthPayments,
+      activeDebts: activeDebts.map((d) => ({
+        name: d.name,
+        balance: d.balance,
+        min: d.min,
+        deadline: d.deadline,
+        note: d.note,
+      })),
+    };
+  };
+
+  const shareCloseOutImage = async () => {
     try {
-      if (navigator.share) {
-        await navigator.share({ title: "Debt Destroyer report", text: lines });
-      } else {
-        await navigator.clipboard.writeText(lines);
-        flash("Month report copied");
-        return;
-      }
-      flash("Report shared");
+      const data = closeOutPayload();
+      const blob = await drawCloseOutImage(data);
+      if (!blob) return flash("Couldn't create image");
+      await shareOrDownloadBlob(
+        blob,
+        `debt-destroyer-closeout-${curMonth}.png`,
+        `Debt Destroyer · ${data.monthTitle}`,
+        flash
+      );
     } catch {
-      try {
-        await navigator.clipboard.writeText(lines);
-        flash("Month report copied");
-      } catch {
-        flash("Couldn't share — copy failed");
-      }
+      flash("Couldn't share image");
+    }
+  };
+
+  const shareCloseOutPdf = async () => {
+    try {
+      const data = closeOutPayload();
+      const blob = buildDetailedCloseOutPdf(data);
+      await shareOrDownloadBlob(
+        blob,
+        `debt-destroyer-closeout-${curMonth}.pdf`,
+        `Debt Destroyer close-out · ${data.monthTitle}`,
+        flash
+      );
+    } catch {
+      flash("Couldn't share PDF");
     }
   };
 
@@ -948,6 +1394,14 @@ export default function App() {
               available={availableAfterTaxAndExpenses}
               onMarkPaid={logPayment}
             />
+            <PaymentHistoryCard rows={paymentHistory} />
+            <GasBudgetCard
+              gasWeek={gasThisWeek}
+              weekBudget={gasWeekBudget}
+              gasMonth={gasThisMonth}
+              monthBudget={gasMonthBudget}
+              dailyBudget={dailyGasBudget}
+            />
             <WeeklyReviewCard
               today={today}
               earnings={earnings}
@@ -971,6 +1425,9 @@ export default function App() {
               whatIfDate={whatIfDate}
               remaining={remainingDebt}
               baselineDaily={overallDailyAvg || baseDaily}
+              customDaily={customDaily}
+              onApply={applyWhatIfAsTarget}
+              onClear={clearCustomDaily}
             />
             <InterestDragCard debts={debts} />
             <SmartPayoffCard
@@ -1002,13 +1459,24 @@ export default function App() {
               baseline={settings.monthlyBaseline}
               hasPlan={!!planMonth}
             />
-            <MonthReportCard onShare={shareMonthReport} curMonth={curMonth} earned={earnedThisMonth} spent={spentThisMonth} />
+            <MonthReportCard
+              onShareImage={shareCloseOutImage}
+              onSharePdf={shareCloseOutPdf}
+              curMonth={curMonth}
+              earned={earnedThisMonth}
+              spent={spentThisMonth}
+              debtPaid={debtPaidThisMonth}
+              taxWallet={taxWallet}
+              monthTarget={monthTarget}
+              plan={settings.activePlan}
+            />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <TaxWalletCard
                 wallet={taxWallet}
                 expected={taxReserve}
                 rate={settings.taxRate}
                 onWithdraw={withdrawTax}
+                onSyncExpected={syncTaxWalletToExpected}
               />
               <BufferCard buffer={buffer} goal={settings.bufferGoal} onFund={fundBuffer} />
             </div>
@@ -1024,10 +1492,15 @@ export default function App() {
           <MoneyView
             earnings={earnings}
             expenses={expenses}
+            recurring={recurring}
             onEarn={addEarning}
             onExpense={addExpense}
             onUpdateExpense={updateExpense}
+            onUpdateEarning={updateEarning}
             onRemove={removeEntry}
+            onAddRecurring={addRecurring}
+            onRemoveRecurring={removeRecurring}
+            onLogRecurring={logRecurringNow}
           />
         )}
 
@@ -1040,6 +1513,7 @@ export default function App() {
             settings={settings}
             setSettings={setSettings}
             onExport={exportJSON}
+            onExportCsv={exportCSV}
             onImportClick={() => importInputRef.current?.click()}
             onReset={resetAll}
             onSignOut={cloudEnabled ? handleSignOut : null}
@@ -1213,11 +1687,25 @@ function LoginScreen({ onSignedIn }) {
 function AlertsBanner({ alerts }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      {alerts.map(({ d, days }) => {
-        const urgent = days <= 7;
+      {alerts.map((alert, idx) => {
+        const { d, days, kind, message } = alert;
+        const urgent = kind === "deadline" ? days <= 7 : kind === "buffer" ? false : days <= 2;
+        const key = d?.id != null ? `${kind}-${d.id}` : `${kind}-${idx}`;
+        const title =
+          kind === "deadline"
+            ? `${d.name} due ${days <= 0 ? "today" : `in ${days} day${days === 1 ? "" : "s"}`}`
+            : kind === "min"
+              ? message
+              : message;
+        const sub =
+          kind === "deadline"
+            ? `Pay in full · ${usd(d.balance)} · ${monthLabel(d.deadline)}`
+            : kind === "min"
+              ? `Due ${days <= 0 ? "today" : `in ${days} day${days === 1 ? "" : "s"}`}`
+              : "Fund buffer before extra debt hits";
         return (
           <div
-            key={d.id}
+            key={key}
             style={{
               display: "flex",
               alignItems: "center",
@@ -1244,14 +1732,14 @@ function AlertsBanner({ alerts }) {
                 flexShrink: 0,
               }}
             >
-              <AlertTriangle size={17} color={urgent ? C.red : C.amber} />
+              {kind === "buffer" ? <Shield size={17} color={C.amber} /> : <AlertTriangle size={17} color={urgent ? C.red : C.amber} />}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 14, color: C.text }}>
-                {d.name} due {days <= 0 ? "today" : `in ${days} day${days === 1 ? "" : "s"}`}
+                {title}
               </div>
               <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginTop: 2 }}>
-                Pay in full · {usd(d.balance)} · {monthLabel(d.deadline)}
+                {sub}
               </div>
             </div>
           </div>
@@ -2102,7 +2590,67 @@ function ShiftStatsCard({ effectiveHourly, hoursThisMonth, earnedThisMonth, best
   );
 }
 
-function WhatIfCard({ extra, setExtra, whatIfDate, remaining, baselineDaily }) {
+function PaymentHistoryCard({ rows }) {
+  const recent = (rows || []).slice(0, 8);
+  if (!recent.length) return null;
+  return (
+    <section style={card}>
+      <SectionLabel icon={ClipboardList}>PAYMENT HISTORY</SectionLabel>
+      <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 7 }}>
+        {recent.map((r) => (
+          <div key={r.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: FONT_DISP, fontWeight: 600, fontSize: 13, color: C.text }}>{r.debtName}</div>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint }}>
+                {r.date}{r.note ? ` · ${r.note}` : ""}
+              </div>
+            </div>
+            <div style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: 13, color: C.green }}>−{usd0(r.amount)}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function GasBudgetCard({ gasWeek, weekBudget, gasMonth, monthBudget, dailyBudget }) {
+  const weekPct = weekBudget > 0 ? Math.min(140, (gasWeek / weekBudget) * 100) : 0;
+  const monthPct = monthBudget > 0 ? Math.min(140, (gasMonth / monthBudget) * 100) : 0;
+  const weekOver = gasWeek > weekBudget + 0.5;
+  const monthOver = gasMonth > monthBudget + 0.5;
+  return (
+    <section style={card}>
+      <SectionLabel icon={Fuel}>GAS VS BUDGET</SectionLabel>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint, marginTop: 6 }}>
+        {usd0(dailyBudget)}/day planned
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <div style={rowBetween}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted }}>This week</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 12, fontWeight: 700, color: weekOver ? C.red : C.text }}>
+            {usd0(gasWeek)} / {usd0(weekBudget)}
+          </span>
+        </div>
+        <div style={{ ...progTrack, height: 7, marginTop: 6 }}>
+          <div style={{ ...progFill, width: `${Math.min(100, weekPct)}%`, background: weekOver ? C.red : C.amber }} />
+        </div>
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <div style={rowBetween}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted }}>This month</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 12, fontWeight: 700, color: monthOver ? C.red : C.text }}>
+            {usd0(gasMonth)} / {usd0(monthBudget)}
+          </span>
+        </div>
+        <div style={{ ...progTrack, height: 7, marginTop: 6 }}>
+          <div style={{ ...progFill, width: `${Math.min(100, monthPct)}%`, background: monthOver ? C.red : C.lane }} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function WhatIfCard({ extra, setExtra, whatIfDate, remaining, baselineDaily, customDaily, onApply, onClear }) {
   return (
     <section style={{ ...card, borderColor: C.blue }}>
       <SectionLabel icon={Zap}>WHAT IF</SectionLabel>
@@ -2132,32 +2680,84 @@ function WhatIfCard({ extra, setExtra, whatIfDate, remaining, baselineDaily }) {
           On ~{usd0(baselineDaily + extra)}/day gross vs {usd0(remaining)} left
         </div>
       </div>
+      <button type="button" onClick={onApply} style={{ ...btnPrimary, width: "100%", marginTop: 12 }}>
+        Use as my daily target ({usd0(Math.round(baselineDaily + extra))})
+      </button>
+      {customDaily != null && (
+        <button type="button" onClick={onClear} style={{ ...btnGhost, width: "100%", marginTop: 8 }}>
+          Clear override ({usd0(customDaily)}/day)
+        </button>
+      )}
     </section>
   );
 }
 
-function MonthReportCard({ onShare, curMonth, earned, spent }) {
+function MonthReportCard({ onShareImage, onSharePdf, curMonth, earned, spent, debtPaid, taxWallet, monthTarget, plan }) {
+  const [busy, setBusy] = useState(null);
+  const run = async (kind, fn) => {
+    if (busy) return;
+    setBusy(kind);
+    try {
+      await fn();
+    } finally {
+      setBusy(null);
+    }
+  };
   return (
     <section style={card}>
       <div style={rowBetween}>
-        <SectionLabel icon={Share2}>MONTH REPORT</SectionLabel>
+        <SectionLabel icon={Share2}>MONTH CLOSE-OUT</SectionLabel>
         <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint }}>{monthLabel(curMonth + "-01")}</span>
       </div>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>
-        Earned {usd0(earned)} · spent {usd0(spent)}. Share a one-screen summary with yourself or an accountability partner.
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
+        <div style={miniStat}>
+          <div style={miniLabel}>EARNED</div>
+          <div style={{ ...miniVal, color: C.green }}>{usd0(earned)}</div>
+        </div>
+        <div style={miniStat}>
+          <div style={miniLabel}>PLAN {plan} TARGET</div>
+          <div style={miniVal}>{usd0(monthTarget || 0)}</div>
+        </div>
+        <div style={miniStat}>
+          <div style={miniLabel}>SPENT</div>
+          <div style={{ ...miniVal, color: C.amber }}>{usd0(spent)}</div>
+        </div>
+        <div style={miniStat}>
+          <div style={miniLabel}>DEBT PAID</div>
+          <div style={miniVal}>{usd0(debtPaid || 0)}</div>
+        </div>
       </div>
-      <button type="button" onClick={onShare} style={{ ...btnPrimary, width: "100%", marginTop: 12 }}>
-        <Share2 size={15} /> Share / copy report
-      </button>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginTop: 10, lineHeight: 1.5 }}>
+        Tax wallet {usd0(taxWallet || 0)}. Share just this card as an image, or a full PDF with every earning and expense listed.
+      </div>
+      <div style={{ display: "flex", gap: 9, marginTop: 12 }}>
+        <button
+          type="button"
+          disabled={!!busy}
+          onClick={() => run("image", onShareImage)}
+          style={{ ...btnPrimary, flex: 1, opacity: busy && busy !== "image" ? 0.55 : 1 }}
+        >
+          <Image size={15} /> {busy === "image" ? "Sharing…" : "Share image"}
+        </button>
+        <button
+          type="button"
+          disabled={!!busy}
+          onClick={() => run("pdf", onSharePdf)}
+          style={{ ...btnGhost, flex: 1, opacity: busy && busy !== "pdf" ? 0.55 : 1 }}
+        >
+          <FileText size={15} /> {busy === "pdf" ? "Building…" : "Share PDF"}
+        </button>
+      </div>
     </section>
   );
 }
 
-function TaxWalletCard({ wallet, expected, rate, onWithdraw }) {
+function TaxWalletCard({ wallet, expected, rate, onWithdraw, onSyncExpected }) {
   const [open, setOpen] = useState(false);
   const [amt, setAmt] = useState("");
+  const mismatch = Math.abs(asMoney(wallet) - asMoney(expected)) > 0.5;
   return (
-    <div style={{ ...card, marginBottom: 0, borderColor: C.amberDim }}>
+    <div style={{ ...card, marginBottom: 0, borderColor: mismatch ? C.amber : C.amberDim }}>
       <SectionLabel icon={Receipt}>TAX WALLET</SectionLabel>
       <div style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: 22, color: C.amber, marginTop: 6 }}>
         {usd0(wallet)}
@@ -2168,6 +2768,11 @@ function TaxWalletCard({ wallet, expected, rate, onWithdraw }) {
       <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.muted, marginTop: 6 }}>
         Expected set-aside {usd0(expected)}
       </div>
+      {mismatch && (
+        <button type="button" onClick={onSyncExpected} style={{ ...btnSm, marginTop: 8, width: "100%", borderColor: C.amber, color: C.amber }}>
+          Match expected
+        </button>
+      )}
       {open ? (
         <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
           <input value={amt} onChange={(e) => setAmt(e.target.value)} placeholder="$ paid IRS" inputMode="decimal" style={{ ...input, padding: "6px 8px", fontSize: 12 }} />
@@ -2244,15 +2849,18 @@ function QuickLog({ onEarn, onExpense }) {
   );
 }
 
-function EarningForm({ onSubmit }) {
-  const [date, setDate] = useState(todayISO());
-  const [gross, setGross] = useState("");
-  const [other, setOther] = useState("");
-  const [hours, setHours] = useState("");
-  const [note, setNote] = useState("");
+function EarningForm({ onSubmit, earning, onCancel }) {
+  const editing = Boolean(earning);
+  const [date, setDate] = useState(earning?.date || todayISO());
+  const [gross, setGross] = useState(earning?.gross ?? "");
+  const [other, setOther] = useState(earning?.other ?? "");
+  const [hours, setHours] = useState(earning?.hours ?? "");
+  const [note, setNote] = useState(earning?.note || "");
   const submit = () => {
     if (!gross && !other) return;
-    onSubmit({ date, gross, other, hours, note });
+    const ok = onSubmit({ date, gross, other, hours, note });
+    if (editing) return;
+    if (ok === false) return;
     setGross(""); setOther(""); setHours(""); setNote("");
   };
   const g = asMoney(gross) + asMoney(other);
@@ -2282,7 +2890,14 @@ function EarningForm({ onSubmit }) {
       <Field label="Note (optional)">
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Busy Friday night" style={input} />
       </Field>
-      <button onClick={submit} style={btnPrimary}><Plus size={15} /> Save shift</button>
+      <div style={{ display: "flex", gap: 9 }}>
+        <button onClick={submit} style={{ ...btnPrimary, flex: 1 }}>
+          {editing ? <><Save size={15} /> Save changes</> : <><Plus size={15} /> Save shift</>}
+        </button>
+        {editing && onCancel && (
+          <button onClick={onCancel} style={{ ...btnGhost, flex: 0.45 }}>Cancel</button>
+        )}
+      </div>
     </div>
   );
 }
@@ -2418,7 +3033,8 @@ function DebtForm({ debt, onSubmit, onCancel }) {
   const [group, setGroup] = useState(debt?.group || "card");
   const [type, setType] = useState(debt?.type || "Interest-bearing");
   const [apr, setApr] = useState(debt?.apr ?? (debt?.group === "card" ? "22.99" : debt?.group === "loan" ? "9.99" : "0"));
-  const submit = () => onSubmit({ name, balance, min, deadline, group, type, apr });
+  const [note, setNote] = useState(debt?.note || "");
+  const submit = () => onSubmit({ name, balance, min, deadline, group, type, apr, note });
   return (
     <section style={{ ...card, borderColor: C.greenDim, boxShadow: "0 14px 34px rgba(0,0,0,.24)" }}>
       <div style={rowBetween}>
@@ -2444,6 +3060,7 @@ function DebtForm({ debt, onSubmit, onCancel }) {
         <Field label="APR %"><input value={apr} onChange={(e) => setApr(e.target.value)} inputMode="decimal" placeholder="0" style={input} /></Field>
         <Field label="Due date / payoff deadline"><input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} style={input} /></Field>
         <div style={{ gridColumn: "1 / -1" }}><Field label="Description"><input value={type} onChange={(e) => setType(e.target.value)} placeholder="Interest-bearing" style={input} /></Field></div>
+        <div style={{ gridColumn: "1 / -1" }}><Field label="Note (optional)"><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Mom — Aug 15" style={input} /></Field></div>
       </div>
       <div style={{ display: "flex", gap: 9, marginTop: 12 }}>
         <button onClick={submit} style={{ ...btnPrimary, flex: 1 }}><Save size={15} /> {debt ? "Save changes" : "Add debt"}</button>
@@ -2456,6 +3073,7 @@ function DebtForm({ debt, onSubmit, onCancel }) {
 function DebtCard({ d, today, onPay, onEdit, onDelete }) {
   const [open, setOpen] = useState(false);
   const [amt, setAmt] = useState("");
+  const [payNote, setPayNote] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const original = asMoney(d.originalBalance) || asMoney(d.balance) || 1;
   const pct = Math.min(100, Math.max(0, ((original - d.balance) / original) * 100));
@@ -2476,6 +3094,9 @@ function DebtCard({ d, today, onPay, onEdit, onDelete }) {
           <button onClick={onEdit} style={{ ...btnSm, padding: 6 }} title="Edit debt"><Pencil size={13} /></button>
         </div>
       </div>
+      {d.note ? (
+        <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginTop: 6 }}>{d.note}</div>
+      ) : null}
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 8 }}>
         <span style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: 21, color: d.paid ? C.green : C.text }}>{usd(d.balance)}</span>
         <span style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint }}>of {usd(original)}</span>
@@ -2490,14 +3111,17 @@ function DebtCard({ d, today, onPay, onEdit, onDelete }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 9 }}>
         <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint }}>{d.type}</span>
         {!d.paid && (open ? (
-          <div style={{ display: "flex", gap: 6 }}>
-            <input value={amt} onChange={(e) => setAmt(e.target.value)} placeholder="$ amount" inputMode="decimal" style={{ ...input, width: 92, padding: "6px 8px", fontSize: 12 }} />
-            <button onClick={() => { onPay(d.id, amt); setAmt(""); setOpen(false); }} style={{ ...btnSm, background: C.green, color: C.asphalt, borderColor: C.green }}><Check size={13} /></button>
-            <button onClick={() => setOpen(false)} style={btnSm}><X size={13} /></button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input value={amt} onChange={(e) => setAmt(e.target.value)} placeholder="$ amount" inputMode="decimal" style={{ ...input, width: 92, padding: "6px 8px", fontSize: 12 }} />
+              <button onClick={() => { onPay(d.id, amt, payNote); setAmt(""); setPayNote(""); setOpen(false); }} style={{ ...btnSm, background: C.green, color: C.asphalt, borderColor: C.green }}><Check size={13} /></button>
+              <button onClick={() => setOpen(false)} style={btnSm}><X size={13} /></button>
+            </div>
+            <input value={payNote} onChange={(e) => setPayNote(e.target.value)} placeholder="Note (optional)" style={{ ...input, width: 210, padding: "6px 8px", fontSize: 11 }} />
           </div>
         ) : <button onClick={() => setOpen(true)} style={btnSm}><Plus size={12} /> Log payment</button>)}
       </div>
-      {(d.payments || []).length > 0 && <div style={{ marginTop: 9, borderTop: `1px solid ${C.lineSoft}`, paddingTop: 7 }}>{d.payments.slice(0, 3).map((p) => <div key={p.id} style={{ display: "flex", justifyContent: "space-between", fontFamily: FONT_MONO, fontSize: 10.5, color: C.muted, marginTop: 2 }}><span>{p.date}</span><span style={{ color: C.green }}>−{usd(p.amount)}</span></div>)}</div>}
+      {(d.payments || []).length > 0 && <div style={{ marginTop: 9, borderTop: `1px solid ${C.lineSoft}`, paddingTop: 7 }}>{d.payments.slice(0, 3).map((p) => <div key={p.id} style={{ display: "flex", justifyContent: "space-between", fontFamily: FONT_MONO, fontSize: 10.5, color: C.muted, marginTop: 2 }}><span>{p.date}{p.note ? ` · ${p.note}` : ""}</span><span style={{ color: C.green }}>−{usd(p.amount)}</span></div>)}</div>}
       <div style={{ borderTop: `1px solid ${C.lineSoft}`, marginTop: 10, paddingTop: 8 }}>
         {confirmDelete ? <div style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ flex: 1, fontFamily: FONT_MONO, fontSize: 10.5, color: C.red }}>Delete this debt and payment history?</span><button onClick={onDelete} style={{ ...btnSm, color: C.red, borderColor: C.redDim }}>Delete</button><button onClick={() => setConfirmDelete(false)} style={btnSm}>Cancel</button></div> : <button onClick={() => setConfirmDelete(true)} style={{ ...btnSm, border: "none", background: "transparent", color: C.faint, paddingLeft: 0 }}><Trash2 size={13} /> Delete debt</button>}
       </div>
@@ -2506,9 +3130,27 @@ function DebtCard({ d, today, onPay, onEdit, onDelete }) {
 }
 
 /* ---------- Money view (history + logging) ---------- */
-function MoneyView({ earnings, expenses, onEarn, onExpense, onUpdateExpense, onRemove }) {
+function MoneyView({
+  earnings,
+  expenses,
+  recurring = [],
+  onEarn,
+  onExpense,
+  onUpdateExpense,
+  onUpdateEarning,
+  onRemove,
+  onAddRecurring,
+  onRemoveRecurring,
+  onLogRecurring,
+}) {
   const [mode, setMode] = useState("earn");
   const [editingExpense, setEditingExpense] = useState(null);
+  const [editingEarning, setEditingEarning] = useState(null);
+  const [showRecurringForm, setShowRecurringForm] = useState(false);
+  const [recAmt, setRecAmt] = useState("");
+  const [recCat, setRecCat] = useState("Rent");
+  const [recNote, setRecNote] = useState("");
+  const [recCadence, setRecCadence] = useState("monthly");
   const feed = [
     ...earnings.map((e) => ({ ...e, kind: "earn", amt: (Number(e.gross) || 0) + (Number(e.other) || 0) })),
     ...expenses.map((e) => ({ ...e, kind: "spend", amt: Number(e.amount) || 0 })),
@@ -2517,7 +3159,22 @@ function MoneyView({ earnings, expenses, onEarn, onExpense, onUpdateExpense, onR
   return (
     <div>
       <section style={card}>
-        {editingExpense ? (
+        {editingEarning ? (
+          <>
+            <SectionLabel icon={Pencil}>EDIT EARNING</SectionLabel>
+            <div style={{ marginTop: 10 }}>
+              <EarningForm
+                key={editingEarning.id}
+                earning={editingEarning}
+                onCancel={() => setEditingEarning(null)}
+                onSubmit={(values) => {
+                  const ok = onUpdateEarning(editingEarning.id, values);
+                  if (ok) setEditingEarning(null);
+                }}
+              />
+            </div>
+          </>
+        ) : editingExpense ? (
           <>
             <SectionLabel icon={Pencil}>EDIT EXPENSE</SectionLabel>
             <div style={{ marginTop: 10 }}>
@@ -2540,6 +3197,74 @@ function MoneyView({ earnings, expenses, onEarn, onExpense, onUpdateExpense, onR
             </div>
             {mode === "earn" ? <EarningForm onSubmit={onEarn} /> : <ExpenseForm onSubmit={onExpense} />}
           </>
+        )}
+      </section>
+
+      <SectionHeading>Recurring expenses</SectionHeading>
+      <section style={card}>
+        <SectionLabel icon={Repeat}>TEMPLATES</SectionLabel>
+        <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginTop: 6, lineHeight: 1.45 }}>
+          Rent, insurance, phone — tap Log when due so Money stays accurate.
+        </div>
+        {(recurring || []).map((r) => (
+          <div key={r.id} style={{ ...rowBetween, marginTop: 10, gap: 8 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: FONT_DISP, fontWeight: 600, fontSize: 13 }}>{r.category} · {usd0(r.amount)}</div>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint }}>
+                {r.cadence}{r.note ? ` · ${r.note}` : ""}{r.lastLogged ? ` · last ${r.lastLogged}` : ""}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button type="button" onClick={() => onLogRecurring(r.id)} style={{ ...btnSm, background: C.amber, color: C.asphalt, borderColor: C.amber }}>Log</button>
+              <button type="button" onClick={() => onRemoveRecurring(r.id)} style={{ ...btnSm, padding: 6 }}><Trash2 size={13} /></button>
+            </div>
+          </div>
+        ))}
+        {showRecurringForm ? (
+          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 9 }}>
+            <div style={{ display: "flex", gap: 9 }}>
+              <Field label="Amount" flex>
+                <input value={recAmt} onChange={(e) => setRecAmt(e.target.value)} inputMode="decimal" placeholder="$0" style={input} />
+              </Field>
+              <Field label="Cadence" flex>
+                <select value={recCadence} onChange={(e) => setRecCadence(e.target.value)} style={input}>
+                  <option value="monthly">Monthly</option>
+                  <option value="weekly">Weekly</option>
+                </select>
+              </Field>
+            </div>
+            <Field label="Category">
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {EXP_CATS.map((c) => (
+                  <button key={c} type="button" onClick={() => setRecCat(c)} style={chip(recCat === c)}>{c}</button>
+                ))}
+              </div>
+            </Field>
+            <Field label="Note">
+              <input value={recNote} onChange={(e) => setRecNote(e.target.value)} placeholder="Rent — 1st of month" style={input} />
+            </Field>
+            <div style={{ display: "flex", gap: 9 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const ok = onAddRecurring({ amount: recAmt, category: recCat, note: recNote, cadence: recCadence });
+                  if (ok) {
+                    setRecAmt("");
+                    setRecNote("");
+                    setShowRecurringForm(false);
+                  }
+                }}
+                style={{ ...btnPrimary, flex: 1 }}
+              >
+                <Plus size={14} /> Save template
+              </button>
+              <button type="button" onClick={() => setShowRecurringForm(false)} style={{ ...btnGhost, flex: 0.45 }}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setShowRecurringForm(true)} style={{ ...btnGhost, width: "100%", marginTop: 12 }}>
+            <Plus size={14} /> Add recurring
+          </button>
         )}
       </section>
 
@@ -2566,18 +3291,22 @@ function MoneyView({ earnings, expenses, onEarn, onExpense, onUpdateExpense, onR
             <div style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: 14, color: isEarn ? C.green : C.amber }}>
               {isEarn ? "+" : "−"}{usd0(f.amt)}
             </div>
-            {!isEarn && (
-              <button
-                onClick={() => {
+            <button
+              onClick={() => {
+                if (isEarn) {
+                  setEditingExpense(null);
+                  setEditingEarning(f);
+                } else {
+                  setEditingEarning(null);
                   setEditingExpense(f);
-                  window.scrollTo?.({ top: 0, behavior: "smooth" });
-                }}
-                style={{ ...btnSm, padding: 6, border: "none", background: "transparent" }}
-                title="Edit expense"
-              >
-                <Pencil size={14} color={C.faint} />
-              </button>
-            )}
+                }
+                window.scrollTo?.({ top: 0, behavior: "smooth" });
+              }}
+              style={{ ...btnSm, padding: 6, border: "none", background: "transparent" }}
+              title={isEarn ? "Edit earning" : "Edit expense"}
+            >
+              <Pencil size={14} color={C.faint} />
+            </button>
             <button onClick={() => onRemove(isEarn ? "earn" : "spend", f.id)} style={{ ...btnSm, padding: 6, border: "none", background: "transparent" }}>
               <Trash2 size={14} color={C.faint} />
             </button>
@@ -2636,7 +3365,7 @@ function ChartsView({ earningsData, debtData, curMonth, baseDaily }) {
 }
 
 /* ---------- Settings ---------- */
-function SettingsView({ settings, setSettings, onExport, onImportClick, onReset, onSignOut, accountEmail }) {
+function SettingsView({ settings, setSettings, onExport, onExportCsv, onImportClick, onReset, onSignOut, accountEmail }) {
   const [confirmReset, setConfirmReset] = useState(false);
   const set = (k, v) => setSettings((s) => ({ ...s, [k]: v }));
   return (
@@ -2693,6 +3422,11 @@ function SettingsView({ settings, setSettings, onExport, onImportClick, onReset,
             );
           })}
         </div>
+        {settings.customDailyTarget != null && (
+          <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.lane, marginTop: 10 }}>
+            Custom daily override active: {usd0(settings.customDailyTarget)} — clear it from What If on Home.
+          </div>
+        )}
       </section>
 
       <SectionHeading>Payoff method</SectionHeading>
@@ -2731,6 +3465,21 @@ function SettingsView({ settings, setSettings, onExport, onImportClick, onReset,
         </div>
       </section>
 
+      <SectionHeading>Reminders</SectionHeading>
+      <section style={card}>
+        <div style={rowBetween}>
+          <div>
+            <div style={{ fontFamily: FONT_DISP, fontWeight: 600, fontSize: 14 }}>Soft reminders</div>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginTop: 4, lineHeight: 1.45 }}>
+              Buffer below goal + min payments near deadline
+            </div>
+          </div>
+          <TogglePill on={settings.softReminders !== false} onClick={() => set("softReminders", settings.softReminders === false)}>
+            {settings.softReminders === false ? "Off" : "On"}
+          </TogglePill>
+        </div>
+      </section>
+
       {onSignOut && (
         <>
           <SectionHeading>Account</SectionHeading>
@@ -2748,11 +3497,12 @@ function SettingsView({ settings, setSettings, onExport, onImportClick, onReset,
       <SectionHeading>Backup</SectionHeading>
       <section style={card}>
         <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginBottom: 11, lineHeight: 1.5 }}>
-          Cloud sync requires login. Export a JSON file anytime for an extra backup.
+          Cloud sync requires login. Export JSON anytime, or CSV for sheets / taxes.
         </div>
-        <div style={{ display: "flex", gap: 9 }}>
-          <button onClick={onExport} style={{ ...btnPrimary, flex: 1 }}><Download size={15} /> Export JSON</button>
-          <button onClick={onImportClick} style={{ ...btnGhost, flex: 1 }}><Upload size={15} /> Import JSON</button>
+        <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
+          <button onClick={onExport} style={{ ...btnPrimary, flex: 1, minWidth: 120 }}><Download size={15} /> Export JSON</button>
+          <button onClick={onExportCsv} style={{ ...btnGhost, flex: 1, minWidth: 120 }}><FileSpreadsheet size={15} /> Export CSV</button>
+          <button onClick={onImportClick} style={{ ...btnGhost, flex: 1, minWidth: 120 }}><Upload size={15} /> Import JSON</button>
         </div>
       </section>
 
