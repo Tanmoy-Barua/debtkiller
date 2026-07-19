@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node scripts/test-tax-wallet.mjs",
+    "test:tax": "node scripts/test-tax-wallet.mjs",
+    "test:e2e-tax": "node scripts/e2e-tax-wallet-delete.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.57.4",
@@ -19,6 +22,7 @@
   "devDependencies": {
     "@types/node": "^26.1.1",
     "@vitejs/plugin-react": "4.3.4",
+    "playwright": "^1.61.1",
     "vite": "5.4.19"
   },
   "engines": {

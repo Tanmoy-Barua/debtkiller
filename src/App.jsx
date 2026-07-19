@@ -12,6 +12,7 @@ import {
   Tooltip, ResponsiveContainer, ReferenceLine
 } from "recharts";
 import { cloudEnabled, loadAppState, saveAppState, subscribeAppState, getSession, onAuthChange, signIn, signOut, emptyAppState } from "./cloudStore.js";
+import { applyTaxEdit, applyTaxPark, applyTaxUnpark, incomeOfEarning } from "./taxWallet.js";
 
 /* ------------------------------------------------------------------ */
 /*  Palette — "cockpit at night". Custom hexes via inline styles       */
@@ -865,12 +866,13 @@ export default function App() {
       hours: Math.max(0, Number(hours) || 0) || null,
       note: (note || "").trim(),
     };
-    const income = entry.gross + entry.other;
+    const income = incomeOfEarning(entry);
     if (income <= 0) return flash("Enter an income amount");
-    const taxBite = +(income * settings.taxRate).toFixed(2);
+    const { taxParked } = applyTaxPark(0, income, settings.taxRate);
+    entry.taxParked = taxParked;
     setEarnings((p) => [entry, ...p]);
-    if (taxBite > 0) setTaxWallet((w) => +(w + taxBite).toFixed(2));
-    flash(taxBite > 0 ? `Logged · ${usd0(taxBite)} parked in tax wallet` : "Earnings logged");
+    if (taxParked > 0) setTaxWallet((w) => +(w + taxParked).toFixed(2));
+    flash(taxParked > 0 ? `Logged · ${usd0(taxParked)} parked in tax wallet` : "Earnings logged");
   };
   const updateEarning = (id, changes) => {
     const nextGross = asMoney(changes.gross);
@@ -879,8 +881,7 @@ export default function App() {
     if (nextIncome <= 0) return flash("Enter an income amount");
     const prev = earnings.find((e) => e.id === id);
     if (!prev) return flash("Earning not found");
-    const prevIncome = asMoney(prev.gross) + asMoney(prev.other);
-    const taxDelta = +((nextIncome - prevIncome) * settings.taxRate).toFixed(2);
+    const { taxDelta, taxParked } = applyTaxEdit(0, prev, nextIncome, settings.taxRate);
     setEarnings((p) =>
       p.map((e) =>
         e.id === id
@@ -891,6 +892,7 @@ export default function App() {
               other: nextOther,
               hours: Math.max(0, Number(changes.hours) || 0) || null,
               note: (changes.note || "").trim(),
+              taxParked,
             }
           : e
       )
@@ -928,8 +930,7 @@ export default function App() {
     if (kind === "earn") {
       const prev = earnings.find((e) => e.id === id);
       if (prev) {
-        const income = asMoney(prev.gross) + asMoney(prev.other);
-        const taxBite = +(income * settings.taxRate).toFixed(2);
+        const { taxBite } = applyTaxUnpark(0, prev, settings.taxRate);
         if (taxBite > 0) setTaxWallet((w) => Math.max(0, +(w - taxBite).toFixed(2)));
       }
       setEarnings((p) => p.filter((e) => e.id !== id));
@@ -3307,7 +3308,11 @@ function MoneyView({
             >
               <Pencil size={14} color={C.faint} />
             </button>
-            <button onClick={() => onRemove(isEarn ? "earn" : "spend", f.id)} style={{ ...btnSm, padding: 6, border: "none", background: "transparent" }}>
+            <button
+              onClick={() => onRemove(isEarn ? "earn" : "spend", f.id)}
+              style={{ ...btnSm, padding: 6, border: "none", background: "transparent" }}
+              title={isEarn ? "Delete earning" : "Delete expense"}
+            >
               <Trash2 size={14} color={C.faint} />
             </button>
           </div>
