@@ -40,6 +40,20 @@ async function waitForPreview(url, timeoutMs = 30000) {
   throw new Error(`Preview did not become ready at ${url}: ${lastError?.message || "timed out"}`);
 }
 
+function stopPreview(preview) {
+  if (preview.exitCode !== null || preview.killed) return;
+
+  try {
+    if (process.platform === "win32") {
+      preview.kill("SIGTERM");
+    } else {
+      process.kill(-preview.pid, "SIGTERM");
+    }
+  } catch {
+    preview.kill("SIGTERM");
+  }
+}
+
 async function main() {
   await run("npm", ["audit", "--audit-level=moderate"]);
   await run("npm", ["test"]);
@@ -48,16 +62,22 @@ async function main() {
   const preview = spawn("npm", PREVIEW_ARGS, {
     stdio: "inherit",
     shell: process.platform === "win32",
+    detached: process.platform !== "win32",
     env: { ...process.env, E2E_BASE: PREVIEW_URL },
+  });
+  const previewExited = new Promise((_, reject) => {
+    preview.once("exit", (code, signal) => {
+      reject(new Error(`Preview server stopped before the smoke test completed with ${signal || `exit code ${code}`}`));
+    });
   });
 
   try {
-    await waitForPreview(PREVIEW_URL);
+    await Promise.race([waitForPreview(PREVIEW_URL), previewExited]);
     await run("npm", ["run", "test:e2e-theme"], {
       env: { ...process.env, E2E_BASE: PREVIEW_URL },
     });
   } finally {
-    preview.kill("SIGTERM");
+    stopPreview(preview);
   }
 }
 
