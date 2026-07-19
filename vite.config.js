@@ -7,10 +7,12 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          charts: ['recharts'],
-          icons: ['lucide-react'],
-          react: ['react', 'react-dom'],
+        manualChunks(id) {
+          if (id.includes('/node_modules/react/') || id.includes('/node_modules/react-dom/')) return 'react';
+          if (id.includes('/node_modules/recharts/')) return 'charts';
+          if (id.includes('/node_modules/lucide-react/')) return 'icons';
+          if (id.includes('/node_modules/jspdf/')) return 'pdf';
+          if (id.includes('/node_modules/')) return 'vendor';
         },
       },
     },
