@@ -12,6 +12,7 @@ import {
   Tooltip, ResponsiveContainer, ReferenceLine
 } from "recharts";
 import { cloudEnabled, loadAppState, saveAppState, subscribeAppState, getSession, onAuthChange, signIn, signOut, emptyAppState } from "./cloudStore.js";
+import { appliedPayment, milestoneCrossings } from "./milestones.js";
 
 /* ------------------------------------------------------------------ */
 /*  Palette — "cockpit at night". Custom hexes via inline styles       */
@@ -1026,23 +1027,24 @@ export default function App() {
   const logPayment = (debtId, amount, note = "") => {
     const amt = +amount;
     if (!amt || amt <= 0) return;
+    const debt = debts.find((d) => d.id === debtId);
+    if (!debt) return;
+    // Cap to remaining balance so overpays don't inflate milestones / paid totals.
+    const applied = appliedPayment(debt.balance, amt);
+    if (applied <= 0) return;
+
     const paidBefore = Math.max(0, originalTotal - remainingDebt);
-    let appliedTotal = 0;
+    const paidAfter = paidBefore + applied;
+    const nowPaid = asMoney(debt.balance) - applied <= 0.005;
+
     setDebts((prev) =>
       prev.map((d) => {
         if (d.id !== debtId) return d;
-        const applied = Math.min(asMoney(d.balance), amt);
-        appliedTotal = applied;
-        const nb = Math.max(0, +(d.balance - applied).toFixed(2));
-        const nowPaid = nb <= 0.005;
-        if (nowPaid && !d.paid) {
-          setCelebrate(`${d.name} cleared`);
-          setTimeout(() => setCelebrate(null), 3200);
-        }
+        const nb = Math.max(0, +(asMoney(d.balance) - applied).toFixed(2));
         return {
           ...d,
           balance: nb,
-          paid: nowPaid,
+          paid: nb <= 0.005,
           payments: [
             { id: uid(), date: today, amount: applied, note: (note || "").trim() },
             ...(d.payments || []),
@@ -1050,11 +1052,13 @@ export default function App() {
         };
       })
     );
-    const paidAfter = paidBefore + appliedTotal;
-    const crossed = [];
-    for (let k = 1000; k <= paidAfter; k += 1000) {
-      if (paidBefore < k && paidAfter >= k && !milestonesSeen.includes(k)) crossed.push(k);
+
+    if (nowPaid && !debt.paid) {
+      setCelebrate(`${debt.name} cleared`);
+      setTimeout(() => setCelebrate(null), 3200);
     }
+
+    const crossed = milestoneCrossings(paidBefore, paidAfter, milestonesSeen);
     if (crossed.length) {
       setMilestonesSeen((m) => [...m, ...crossed]);
       const top = crossed[crossed.length - 1];
@@ -3114,7 +3118,14 @@ function DebtCard({ d, today, onPay, onEdit, onDelete }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
             <div style={{ display: "flex", gap: 6 }}>
               <input value={amt} onChange={(e) => setAmt(e.target.value)} placeholder="$ amount" inputMode="decimal" style={{ ...input, width: 92, padding: "6px 8px", fontSize: 12 }} />
-              <button onClick={() => { onPay(d.id, amt, payNote); setAmt(""); setPayNote(""); setOpen(false); }} style={{ ...btnSm, background: C.green, color: C.asphalt, borderColor: C.green }}><Check size={13} /></button>
+              <button
+                type="button"
+                title="Confirm payment"
+                onClick={() => { onPay(d.id, amt, payNote); setAmt(""); setPayNote(""); setOpen(false); }}
+                style={{ ...btnSm, background: C.green, color: C.asphalt, borderColor: C.green }}
+              >
+                <Check size={13} />
+              </button>
               <button onClick={() => setOpen(false)} style={btnSm}><X size={13} /></button>
             </div>
             <input value={payNote} onChange={(e) => setPayNote(e.target.value)} placeholder="Note (optional)" style={{ ...input, width: 210, padding: "6px 8px", fontSize: 11 }} />
