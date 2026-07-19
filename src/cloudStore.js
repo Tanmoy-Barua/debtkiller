@@ -1,7 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
+import {
+  clearUnscopedLocalBackups,
+  loadLocalBackup,
+  saveLocalBackup,
+} from "./localBackup.js";
 
-const STORE_KEY = "debt-destroyer:v2";
-const LEGACY_KEY = "debt-destroyer:v1";
 /** Only this account may keep the pre-multiuser / seed debt list. */
 const OWNER_EMAIL = "debtkiller.owner@gmail.com";
 const LEAKED_SEED_MARKERS = [
@@ -52,10 +55,6 @@ export function emptyAppState() {
   };
 }
 
-function localKey(userId) {
-  return userId ? `${STORE_KEY}:${userId}` : STORE_KEY;
-}
-
 function stateLooksPopulated(state) {
   if (!state || typeof state !== "object") return false;
   const debts = Array.isArray(state.debts) ? state.debts.length : 0;
@@ -84,38 +83,15 @@ function sanitizeStateForUser(state, email) {
 }
 
 function loadLocal(userId) {
-  try {
-    const keyed = localStorage.getItem(localKey(userId));
-    if (keyed) return JSON.parse(keyed);
-    // Local-only / legacy fallbacks when reading the unscoped key
-    if (!userId) {
-      const legacy = localStorage.getItem(LEGACY_KEY);
-      return legacy ? JSON.parse(legacy) : null;
-    }
-    return null;
-  } catch (error) {
-    console.warn("Local backup could not be read", error);
-    return null;
-  }
+  return loadLocalBackup(userId);
 }
 
 function clearLegacyLocalBackups() {
-  try {
-    localStorage.removeItem(STORE_KEY);
-    localStorage.removeItem(LEGACY_KEY);
-  } catch {
-    /* ignore */
-  }
+  clearUnscopedLocalBackups();
 }
 
 function saveLocal(state, userId) {
-  try {
-    localStorage.setItem(localKey(userId), JSON.stringify(state));
-    return true;
-  } catch (error) {
-    console.warn("Local backup could not be saved", error);
-    return false;
-  }
+  return saveLocalBackup(state, userId);
 }
 
 function cleanAuthInput(email, password, { minPassword = 8 } = {}) {
@@ -214,8 +190,12 @@ async function saveCloud(state, userId) {
 
 export async function loadAppState() {
   if (!cloudEnabled) {
+    // Local-only mode: must read the same unscoped key saveLocal(null) writes.
     const localState = loadLocal(null);
-    return { state: localState, source: localState ? "local" : "empty" };
+    if (localState && typeof localState === "object") {
+      return { state: localState, source: "local" };
+    }
+    return { state: emptyAppState(), source: "empty" };
   }
 
   const session = await getSession();
