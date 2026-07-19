@@ -658,7 +658,9 @@ export default function App() {
     setSyncStatus(cloudEnabled ? "saving" : "local");
     saveTimer.current = setTimeout(async () => {
       const result = await saveAppState({ debts, earnings, expenses, recurring, settings, buffer, taxWallet, milestonesSeen });
-      setSyncStatus(result.cloud ? "synced" : cloudEnabled ? "error" : "local");
+      if (result.cloud) setSyncStatus("synced");
+      else if (!result.local) setSyncStatus("error");
+      else setSyncStatus(cloudEnabled ? "ready" : "local");
     }, 700);
     return () => saveTimer.current && clearTimeout(saveTimer.current);
   }, [debts, earnings, expenses, recurring, settings, buffer, taxWallet, milestonesSeen, loaded, session?.user?.id || session?.local]);
