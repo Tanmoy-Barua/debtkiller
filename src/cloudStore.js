@@ -45,6 +45,7 @@ export function emptyAppState() {
       dailyGasBudget: 40,
       softReminders: true,
       customDailyTarget: null,
+      theme: "dark",
     },
     buffer: 0,
     taxWallet: 0,

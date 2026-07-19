@@ -4,7 +4,8 @@ import {
   Plus, Check, AlertTriangle, Download, Upload, Car, Flag, Target,
   PiggyBank, Receipt, Trash2, X, ChevronRight, Zap, Shield, Gauge,
   Search, ArrowUpDown, Lightbulb, Pencil, Save, CalendarCheck, Flame, Landmark,
-  Timer, Bell, Share2, Fuel, CalendarDays, Trophy, Repeat, ClipboardList, FileSpreadsheet, Image, FileText
+  Timer, Bell, Share2, Fuel, CalendarDays, Trophy, Repeat, ClipboardList, FileSpreadsheet, Image, FileText,
+  Sun, Moon, Monitor
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import {
@@ -12,29 +13,12 @@ import {
   Tooltip, ResponsiveContainer, ReferenceLine
 } from "recharts";
 import { cloudEnabled, loadAppState, saveAppState, subscribeAppState, getSession, onAuthChange, signIn, signOut, emptyAppState } from "./cloudStore.js";
+import { THEME_OPTIONS, paletteFor, resolveThemeMode } from "./theme.js";
 
 /* ------------------------------------------------------------------ */
-/*  Palette — "cockpit at night". Custom hexes via inline styles       */
-/*  (artifact Tailwind has no JIT, so arbitrary values won't compile). */
+/*  Palette — mutable so light/dark can repaint shared style objects    */
 /* ------------------------------------------------------------------ */
-const C = {
-  asphalt: "#070B10",
-  surface: "#121820",
-  surface2: "#1A222C",
-  line: "#2A3542",
-  lineSoft: "#1E2732",
-  text: "#F2F5F8",
-  muted: "#8A97A6",
-  faint: "#5B6875",
-  green: "#3DDC97",
-  greenDim: "#164A38",
-  red: "#FF6B6B",
-  redDim: "#4A1F1F",
-  amber: "#F5C451",
-  amberDim: "#4A3A12",
-  lane: "#FFE566",
-  blue: "#6BB0FF",
-};
+const C = { ...paletteFor("dark") };
 
 const FONT_MONO = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace";
 const FONT_DISP = "'Space Grotesk', ui-sans-serif, system-ui, sans-serif";
@@ -94,6 +78,7 @@ const DEFAULT_SETTINGS = {
   dailyGasBudget: 40, // planned gas spend per day (Uber)
   softReminders: true,
   customDailyTarget: null, // override plan daily when set by What-If
+  theme: "dark", // "dark" | "light" | "system"
 };
 
 /* ------------------------------------------------------------------ */
@@ -516,10 +501,12 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [nudgeDismissed, setNudgeDismissed] = useState(false);
   const [syncStatus, setSyncStatus] = useState(cloudEnabled ? "connecting" : "local");
+  const [themeTick, setThemeTick] = useState(0);
   const toastTimer = useRef(null);
   const saveTimer = useRef(null);
   const applyingRemote = useRef(false);
   const importInputRef = useRef(null);
+  const appliedThemeRef = useRef("dark");
 
   const applyState = (s) => {
     if (!s || typeof s !== "object") return;
@@ -572,6 +559,24 @@ export default function App() {
       document.head.appendChild(s);
     }
   }, []);
+
+  /* ---- light / dark / system theme ---- */
+  useEffect(() => {
+    const preference = settings.theme || "dark";
+    appliedThemeRef.current = applyAppTheme(preference);
+    setThemeTick((n) => n + 1);
+
+    if (preference !== "system" || typeof window === "undefined" || !window.matchMedia) {
+      return undefined;
+    }
+    const mq = window.matchMedia("(prefers-color-scheme: light)");
+    const onChange = () => {
+      appliedThemeRef.current = applyAppTheme("system");
+      setThemeTick((n) => n + 1);
+    };
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+  }, [settings.theme]);
 
   /* ---- auth bootstrap ---- */
   useEffect(() => {
@@ -1310,7 +1315,7 @@ export default function App() {
   ];
 
   return (
-    <div style={page}>
+    <div style={page} data-theme={C.mode} data-theme-tick={themeTick}>
       {celebrate && <Confetti />}
       {celebrate && (
         <div style={celebrateBanner}>
@@ -3404,6 +3409,40 @@ function SettingsView({ settings, setSettings, onExport, onExportCsv, onImportCl
         </button>
       </section>
 
+      <SectionHeading>Appearance</SectionHeading>
+      <section style={card}>
+        <SectionLabel>THEME</SectionLabel>
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          {THEME_OPTIONS.map((opt) => {
+            const on = (settings.theme || "dark") === opt.id;
+            const Icon = opt.id === "light" ? Sun : opt.id === "system" ? Monitor : Moon;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => {
+                  applyAppTheme(opt.id);
+                  set("theme", opt.id);
+                }}
+                style={{
+                  ...planBtn(on),
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                  gap: 6,
+                }}
+              >
+                <Icon size={16} color={on ? C.asphalt : C.muted} />
+                <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 13 }}>{opt.label}</div>
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginTop: 10, lineHeight: 1.5 }}>
+          Dark keeps the night cockpit. Light uses cool steel surfaces. System follows your device.
+        </div>
+      </section>
+
       <SectionHeading>Plan</SectionHeading>
       <section style={card}>
         <SectionLabel>PAYOFF PLAN</SectionLabel>
@@ -3649,119 +3688,183 @@ function Confetti() {
 }
 
 /* ================================================================== */
-/*  Styles                                                             */
+/*  Styles — mutable objects so theme switches repaint without remount */
 /* ================================================================== */
-const page = {
-  background: `
-    radial-gradient(900px 420px at 50% -10%, rgba(255,229,102,.09), transparent 55%),
-    radial-gradient(700px 360px at 100% 20%, rgba(61,220,151,.05), transparent 50%),
-    linear-gradient(180deg, #0A1018 0%, ${C.asphalt} 40%, #06090D 100%)
-  `,
-  minHeight: "100vh",
-  color: C.text,
-  fontFamily: FONT_BODY,
-  WebkitFontSmoothing: "antialiased",
-};
-const card = {
-  background: C.surface,
-  border: `1px solid ${C.line}`,
-  borderRadius: 16,
-  padding: "14px 15px",
-  marginBottom: 12,
-};
-const rowBetween = { display: "flex", alignItems: "center", justifyContent: "space-between" };
-const input = {
-  background: C.surface2,
-  border: `1px solid ${C.line}`,
-  borderRadius: 9,
-  color: C.text,
-  fontFamily: FONT_MONO,
-  fontSize: 13,
-  padding: "9px 10px",
-  width: "100%",
-  outline: "none",
-  boxSizing: "border-box",
-};
-const btnPrimary = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 7,
-  background: C.green,
-  color: C.asphalt,
-  border: `1px solid ${C.green}`,
-  borderRadius: 10,
-  padding: "11px 14px",
-  fontFamily: FONT_DISP,
-  fontWeight: 700,
-  fontSize: 13.5,
-  cursor: "pointer",
-};
-const btnGhost = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 7,
-  background: "transparent",
-  color: C.text,
-  border: `1px solid ${C.line}`,
-  borderRadius: 10,
-  padding: "11px 14px",
-  fontFamily: FONT_DISP,
-  fontWeight: 600,
-  fontSize: 13,
-  cursor: "pointer",
-};
-const btnSm = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 5,
-  background: C.surface2,
-  color: C.text,
-  border: `1px solid ${C.line}`,
-  borderRadius: 8,
-  padding: "7px 11px",
-  fontFamily: FONT_DISP,
-  fontWeight: 600,
-  fontSize: 11.5,
-  cursor: "pointer",
-};
-const progTrack = {
-  position: "relative",
-  height: 9,
-  background: C.surface2,
-  borderRadius: 6,
-  overflow: "hidden",
-  border: `1px solid ${C.lineSoft}`,
-};
+const page = {};
+const card = {};
+const input = {};
+const btnPrimary = {};
+const btnGhost = {};
+const btnSm = {};
+const progTrack = {};
 const progFill = { height: "100%", borderRadius: 6, transition: "width .5s ease" };
-const miniStat = {
-  flex: 1,
-  background: C.surface2,
-  border: `1px solid ${C.lineSoft}`,
-  borderRadius: 10,
-  padding: "9px 10px",
-};
-const miniLabel = { fontFamily: FONT_MONO, fontSize: 9, letterSpacing: 0.8, color: C.faint };
+const miniStat = {};
+const miniLabel = {};
 const miniVal = { fontFamily: FONT_MONO, fontWeight: 700, fontSize: 15, marginTop: 3 };
-const badgeIcon = {
-  width: 30, height: 30, borderRadius: 9, background: C.lane,
-  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-};
-const badgeIconSm = {
-  width: 22, height: 22, borderRadius: 7, background: C.lane,
-  display: "flex", alignItems: "center", justifyContent: "center",
-  boxShadow: `0 0 0 3px ${C.asphalt}`,
-};
-const paidBadge = {
-  display: "inline-flex", alignItems: "center", gap: 3,
-  background: C.greenDim, color: C.green, border: `1px solid ${C.green}`,
-  borderRadius: 6, padding: "2px 6px", fontFamily: FONT_MONO, fontWeight: 700, fontSize: 9.5, letterSpacing: 0.5,
-};
+const badgeIcon = {};
+const badgeIconSm = {};
+const paidBadge = {};
 const deadlineBadge = {
   fontFamily: FONT_MONO, fontWeight: 700, fontSize: 9.5, letterSpacing: 0.5,
   border: "1px solid", borderRadius: 6, padding: "3px 7px",
 };
+const bottomNav = {};
+const tooltip = {};
+const toastStyle = {};
+const celebrateBanner = {};
+const rowBetween = { display: "flex", alignItems: "center", justifyContent: "space-between" };
+
+function rebuildSharedStyles() {
+  Object.assign(page, {
+    background: `
+      radial-gradient(900px 420px at 50% -10%, ${C.glowLane}, transparent 55%),
+      radial-gradient(700px 360px at 100% 20%, ${C.glowGreen}, transparent 50%),
+      linear-gradient(180deg, ${C.pageMid} 0%, ${C.pageBg} 40%, ${C.pageDeep} 100%)
+    `,
+    minHeight: "100vh",
+    color: C.text,
+    fontFamily: FONT_BODY,
+    WebkitFontSmoothing: "antialiased",
+    transition: "background .25s ease, color .2s ease",
+  });
+  Object.assign(card, {
+    background: C.surface,
+    border: `1px solid ${C.line}`,
+    borderRadius: 16,
+    padding: "14px 15px",
+    marginBottom: 12,
+  });
+  Object.assign(input, {
+    background: C.surface2,
+    border: `1px solid ${C.line}`,
+    borderRadius: 9,
+    color: C.text,
+    fontFamily: FONT_MONO,
+    fontSize: 13,
+    padding: "9px 10px",
+    width: "100%",
+    outline: "none",
+    boxSizing: "border-box",
+  });
+  Object.assign(btnPrimary, {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    background: C.green,
+    color: C.asphalt,
+    border: `1px solid ${C.green}`,
+    borderRadius: 10,
+    padding: "11px 14px",
+    fontFamily: FONT_DISP,
+    fontWeight: 700,
+    fontSize: 13.5,
+    cursor: "pointer",
+  });
+  Object.assign(btnGhost, {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    background: "transparent",
+    color: C.text,
+    border: `1px solid ${C.line}`,
+    borderRadius: 10,
+    padding: "11px 14px",
+    fontFamily: FONT_DISP,
+    fontWeight: 600,
+    fontSize: 13,
+    cursor: "pointer",
+  });
+  Object.assign(btnSm, {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 5,
+    background: C.surface2,
+    color: C.text,
+    border: `1px solid ${C.line}`,
+    borderRadius: 8,
+    padding: "7px 11px",
+    fontFamily: FONT_DISP,
+    fontWeight: 600,
+    fontSize: 11.5,
+    cursor: "pointer",
+  });
+  Object.assign(progTrack, {
+    position: "relative",
+    height: 9,
+    background: C.surface2,
+    borderRadius: 6,
+    overflow: "hidden",
+    border: `1px solid ${C.lineSoft}`,
+  });
+  Object.assign(miniStat, {
+    flex: 1,
+    background: C.surface2,
+    border: `1px solid ${C.lineSoft}`,
+    borderRadius: 10,
+    padding: "9px 10px",
+  });
+  Object.assign(miniLabel, { fontFamily: FONT_MONO, fontSize: 9, letterSpacing: 0.8, color: C.faint });
+  Object.assign(badgeIcon, {
+    width: 30, height: 30, borderRadius: 9, background: C.lane,
+    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+  });
+  Object.assign(badgeIconSm, {
+    width: 22, height: 22, borderRadius: 7, background: C.lane,
+    display: "flex", alignItems: "center", justifyContent: "center",
+    boxShadow: `0 0 0 3px ${C.pageBg}`,
+  });
+  Object.assign(paidBadge, {
+    display: "inline-flex", alignItems: "center", gap: 3,
+    background: C.greenDim, color: C.green, border: `1px solid ${C.green}`,
+    borderRadius: 6, padding: "2px 6px", fontFamily: FONT_MONO, fontWeight: 700, fontSize: 9.5, letterSpacing: 0.5,
+  });
+  Object.assign(bottomNav, {
+    position: "fixed", bottom: 0, left: 0, right: 0,
+    background: C.navBg,
+    borderTop: `1px solid ${C.line}`,
+    backdropFilter: "blur(10px)",
+    paddingBottom: "env(safe-area-inset-bottom, 0px)",
+    zIndex: 40,
+  });
+  Object.assign(tooltip, {
+    background: C.surface2, border: `1px solid ${C.line}`, borderRadius: 9,
+    fontFamily: FONT_MONO, fontSize: 12, color: C.text,
+  });
+  Object.assign(toastStyle, {
+    position: "fixed", bottom: 74, left: "50%", transform: "translateX(-50%)",
+    background: C.surface2, border: `1px solid ${C.green}`, color: C.text,
+    borderRadius: 10, padding: "9px 16px", fontFamily: FONT_DISP, fontWeight: 600, fontSize: 12.5,
+    zIndex: 55, whiteSpace: "nowrap",
+  });
+  Object.assign(celebrateBanner, {
+    position: "fixed", top: 14, left: "50%", transform: "translateX(-50%)",
+    background: C.greenDim, border: `1px solid ${C.green}`, color: C.text,
+    borderRadius: 12, padding: "10px 18px", fontFamily: FONT_DISP, fontWeight: 700, fontSize: 14,
+    display: "flex", alignItems: "center", gap: 8, zIndex: 61,
+  });
+}
+
+function applyAppTheme(preference) {
+  const mode = resolveThemeMode(preference);
+  const next = paletteFor(mode);
+  Object.keys(C).forEach((k) => {
+    if (!(k in next)) delete C[k];
+  });
+  Object.assign(C, next);
+  rebuildSharedStyles();
+  if (typeof document !== "undefined") {
+    document.documentElement.dataset.theme = mode;
+    document.documentElement.style.colorScheme = mode;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", C.pageBg);
+  }
+  return mode;
+}
+
+applyAppTheme("dark");
+
 const chip = (on) => ({
   fontFamily: FONT_DISP, fontWeight: 600, fontSize: 11.5,
   padding: "6px 11px", borderRadius: 8,
@@ -3776,32 +3879,9 @@ const planBtn = (on) => ({
   background: on ? C.lane : "transparent",
   color: on ? C.asphalt : C.text,
 });
-const bottomNav = {
-  position: "fixed", bottom: 0, left: 0, right: 0,
-  background: "rgba(11,15,20,0.94)",
-  borderTop: `1px solid ${C.line}`,
-  backdropFilter: "blur(10px)",
-  paddingBottom: "env(safe-area-inset-bottom, 0px)",
-  zIndex: 40,
-};
 const navBtn = (on) => ({
   flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
   padding: "10px 0 9px", background: "transparent", border: "none",
   color: on ? C.green : C.faint, cursor: "pointer",
 });
-const tooltip = {
-  background: C.surface2, border: `1px solid ${C.line}`, borderRadius: 9,
-  fontFamily: FONT_MONO, fontSize: 12, color: C.text,
-};
-const toastStyle = {
-  position: "fixed", bottom: 74, left: "50%", transform: "translateX(-50%)",
-  background: C.surface2, border: `1px solid ${C.green}`, color: C.text,
-  borderRadius: 10, padding: "9px 16px", fontFamily: FONT_DISP, fontWeight: 600, fontSize: 12.5,
-  zIndex: 55, whiteSpace: "nowrap",
-};
-const celebrateBanner = {
-  position: "fixed", top: 14, left: "50%", transform: "translateX(-50%)",
-  background: C.greenDim, border: `1px solid ${C.green}`, color: C.text,
-  borderRadius: 12, padding: "10px 18px", fontFamily: FONT_DISP, fontWeight: 700, fontSize: 14,
-  display: "flex", alignItems: "center", gap: 8, zIndex: 61,
-};
+
