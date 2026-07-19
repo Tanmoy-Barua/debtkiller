@@ -3,5 +3,16 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
-  base: './'
+  base: './',
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          charts: ['recharts'],
+          icons: ['lucide-react'],
+          react: ['react', 'react-dom'],
+        },
+      },
+    },
+  },
 });
