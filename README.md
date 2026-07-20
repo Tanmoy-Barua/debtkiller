@@ -39,7 +39,7 @@ Private debt-payoff dashboard for tracking cards, loans, personal IOUs, daily Ub
 
 ## Stack
 
-- **Frontend:** React 18, Vite 5, Recharts, Lucide, jsPDF  
+- **Frontend:** React 18, Vite 8, Recharts 3, Lucide, jsPDF  
 - **Auth / DB:** Supabase (optional; local-only mode works without it)  
 - **Bank link:** Plaid Liabilities API (optional; Vercel serverless routes under `api/`)  
 - **Hosting:** Vercel-friendly (`vercel.json`)
@@ -148,6 +148,7 @@ Personal IOUs are not in banks — keep those debts manual.
 | `npm run dev` | Vite dev server |
 | `npm run build` | Production build → `dist/` |
 | `npm run preview` | Serve `dist/` locally |
+| `npm run health` | Audit, unit test, build, preview, and Playwright smoke test |
 | `npm test` | Theme unit checks |
 | `npm run test:e2e-theme` | Browser smoke (Playwright; app must be running) |
 
