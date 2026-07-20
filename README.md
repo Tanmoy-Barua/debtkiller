@@ -101,7 +101,7 @@ Copy [`.env.example`](./.env.example) → `.env`.
 |----------|--------|---------|
 | `VITE_SUPABASE_URL` | Browser | Supabase project URL |
 | `VITE_SUPABASE_ANON_KEY` | Browser | Anon / publishable key |
-| `VITE_OWNER_EMAIL` | Browser | Allowed owner login email (your address) |
+| `VITE_OWNER_EMAIL` | Browser | Optional. If set, only this email can sign in |
 | `PLAID_CLIENT_ID` | Server | Plaid client id |
 | `PLAID_SECRET` | Server | Plaid secret (**not** `VITE_`) |
 | `PLAID_ENV` | Server | `sandbox` / `development` / `production` |
@@ -123,7 +123,7 @@ Copy [`.env.example`](./.env.example) → `.env`.
    2. [`supabase-plaid.sql`](./supabase-plaid.sql) — `plaid_items` vault (service role only)
 3. Put URL + anon key + owner email into `.env` (and Vercel).
 
-Login is **owner-only**: the email must match `VITE_OWNER_EMAIL`.
+Login is **owner-only when `VITE_OWNER_EMAIL` is set**. If that variable is omitted, any valid Supabase Auth user can sign in.
 
 ---
 
@@ -204,7 +204,7 @@ This repo is meant to stay free of personal finance data and personal identifier
 
 | Symptom | Likely fix |
 |---------|------------|
-| Login says owner email not configured | Set `VITE_OWNER_EMAIL` in `.env` / Vercel |
+| Login says owner email not configured / blocked | Optional: set `VITE_OWNER_EMAIL` for a single-owner lock, or leave it unset to allow any Supabase user |
 | “Cloud auth is not configured” | Set `VITE_SUPABASE_URL` + anon/publishable key |
 | Data empty after refresh (local mode) | Confirm you’re on a build that includes local persistence fixes; check `localStorage` key `debt-destroyer:v2` |
 | Plaid “not configured” | Add `PLAID_CLIENT_ID` + `PLAID_SECRET` on the **server** |

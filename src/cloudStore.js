@@ -70,7 +70,8 @@ function stateLooksPopulated(state) {
 }
 
 function isOwnerAccount(email) {
-  if (!OWNER_EMAIL) return false;
+  // No allowlist configured → any signed-in user owns their own row.
+  if (!OWNER_EMAIL) return Boolean(String(email || "").trim());
   return String(email || "").trim().toLowerCase() === OWNER_EMAIL;
 }
 
@@ -152,12 +153,10 @@ export function onAuthChange(callback) {
 
 export async function signIn(email, password) {
   if (!cloudEnabled || !supabase) throw new Error("Cloud auth is not configured");
-  if (!OWNER_EMAIL) {
-    throw new Error("Set VITE_OWNER_EMAIL in your environment before signing in.");
-  }
   const { cleanEmail, cleanPassword } = cleanAuthInput(email, password);
 
-  if (cleanEmail !== OWNER_EMAIL) {
+  // Optional allowlist: only enforced when VITE_OWNER_EMAIL is set.
+  if (OWNER_EMAIL && cleanEmail !== OWNER_EMAIL) {
     throw new Error("Access restricted to the owner account only.");
   }
 
@@ -183,7 +182,7 @@ export async function signIn(email, password) {
   }
 
   const session = data.session;
-  if (!isOwnerAccount(session?.user?.email)) {
+  if (OWNER_EMAIL && !isOwnerAccount(session?.user?.email)) {
     await supabase.auth.signOut();
     throw new Error("Access restricted to the owner account only.");
   }

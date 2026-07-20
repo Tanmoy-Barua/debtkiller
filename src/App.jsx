@@ -1684,7 +1684,7 @@ function LoginScreen({ onSignedIn }) {
         <div style={{ marginTop: 14, fontFamily: FONT_MONO, fontSize: 10, color: C.faint, lineHeight: 1.5, textAlign: "center" }}>
           {ownerEmailConfigured
             ? "Only the configured owner account can access this dashboard"
-            : "Set VITE_OWNER_EMAIL in your environment to enable owner login"}
+            : "Sign in with your Supabase email and password"}
         </div>
       </form>
     </div>
