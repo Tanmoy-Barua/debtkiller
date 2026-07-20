@@ -12,7 +12,7 @@ import {
   LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine
 } from "recharts";
-import { cloudEnabled, loadAppState, saveAppState, subscribeAppState, getSession, onAuthChange, signIn, signOut, emptyAppState } from "./cloudStore.js";
+import { cloudEnabled, loadAppState, saveAppState, subscribeAppState, getSession, onAuthChange, signIn, signOut, emptyAppState, ownerEmailConfigured } from "./cloudStore.js";
 import { THEME_OPTIONS, paletteFor, resolveThemeMode } from "./theme.js";
 
 /* ------------------------------------------------------------------ */
@@ -37,10 +37,10 @@ const seedDebts = () => [
   { id: 4, name: "Credit Card 04", balance: 280.0, min: null, deadline: null, type: "Interest-bearing", group: "card", apr: 19.99 },
   { id: 5, name: "Lender Loan 01", balance: 2173.24, min: 168, deadline: null, type: "Fixed installment", group: "loan", apr: 9.99 },
   { id: 6, name: "Lender Loan 02", balance: 750.0, min: 90, deadline: "2026-07-17", type: "Fixed installment", group: "loan", apr: 11.99 },
-  { id: 7, name: "Anusha (personal)", balance: 2200.0, min: null, deadline: "2026-08-15", type: "Personal, no interest", group: "personal", apr: 0 },
-  { id: 8, name: "Mom (personal)", balance: 800.0, min: null, deadline: null, type: "Personal, no interest", group: "personal", apr: 0 },
-  { id: 9, name: "Sister (personal)", balance: 1500.0, min: null, deadline: null, type: "Personal, no interest", group: "personal", apr: 0 },
-  { id: 10, name: "Dad (personal)", balance: 1500.0, min: null, deadline: null, type: "Personal, no interest", group: "personal", apr: 0 },
+  { id: 7, name: "Friend IOU 01", balance: 2200.0, min: null, deadline: "2026-08-15", type: "Personal, no interest", group: "personal", apr: 0 },
+  { id: 8, name: "Family Loan 01", balance: 800.0, min: null, deadline: null, type: "Personal, no interest", group: "personal", apr: 0 },
+  { id: 9, name: "Family Loan 02", balance: 1500.0, min: null, deadline: null, type: "Personal, no interest", group: "personal", apr: 0 },
+  { id: 10, name: "Family Loan 03", balance: 1500.0, min: null, deadline: null, type: "Personal, no interest", group: "personal", apr: 0 },
 ].map((d) => ({ ...d, originalBalance: d.balance, paid: false, payments: [] }));
 
 /* Plan month targets keyed YYYY-MM: {target, daily} */
@@ -1617,7 +1617,7 @@ function LoginScreen({ onSignedIn }) {
             autoComplete="username"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="debtkiller.owner@gmail.com"
+            placeholder="owner@example.com"
             style={input}
             disabled={busy || locked}
           />
@@ -1682,7 +1682,9 @@ function LoginScreen({ onSignedIn }) {
         </button>
 
         <div style={{ marginTop: 14, fontFamily: FONT_MONO, fontSize: 10, color: C.faint, lineHeight: 1.5, textAlign: "center" }}>
-          Only debtkiller.owner@gmail.com can access this dashboard
+          {ownerEmailConfigured
+            ? "Only the configured owner account can access this dashboard"
+            : "Set VITE_OWNER_EMAIL in your environment to enable owner login"}
         </div>
       </form>
     </div>

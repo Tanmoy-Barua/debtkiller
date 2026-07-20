@@ -2,16 +2,20 @@ import { createClient } from "@supabase/supabase-js";
 
 const STORE_KEY = "debt-destroyer:v2";
 const LEGACY_KEY = "debt-destroyer:v1";
-/** Only this account may keep the pre-multiuser / seed debt list. */
-const OWNER_EMAIL = "debtkiller.owner@gmail.com";
+/** Owner allowlist — set via VITE_OWNER_EMAIL (never hardcode a real address in git). */
+const OWNER_EMAIL = String(import.meta.env.VITE_OWNER_EMAIL || "")
+  .trim()
+  .toLowerCase();
+export const ownerEmailConfigured = Boolean(OWNER_EMAIL);
+/** Detect old shared/seed dashboards wrongly copied onto other accounts. */
 const LEAKED_SEED_MARKERS = [
   "Credit Card 01",
   "Credit Card 02",
   "Lender Loan 01",
-  "Anusha (personal)",
-  "Mom (personal)",
-  "Sister (personal)",
-  "Dad (personal)",
+  "Friend IOU 01",
+  "Family Loan 01",
+  "Family Loan 02",
+  "Family Loan 03",
 ];
 const url = import.meta.env.VITE_SUPABASE_URL;
 const anonKey =
@@ -66,6 +70,7 @@ function stateLooksPopulated(state) {
 }
 
 function isOwnerAccount(email) {
+  if (!OWNER_EMAIL) return false;
   return String(email || "").trim().toLowerCase() === OWNER_EMAIL;
 }
 
@@ -147,6 +152,9 @@ export function onAuthChange(callback) {
 
 export async function signIn(email, password) {
   if (!cloudEnabled || !supabase) throw new Error("Cloud auth is not configured");
+  if (!OWNER_EMAIL) {
+    throw new Error("Set VITE_OWNER_EMAIL in your environment before signing in.");
+  }
   const { cleanEmail, cleanPassword } = cleanAuthInput(email, password);
 
   if (cleanEmail !== OWNER_EMAIL) {

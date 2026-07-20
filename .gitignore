@@ -1,5 +1,46 @@
-node_modules
-dist
+# Dependencies & build
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Environment & secrets (never commit real values)
 .env
-.env.local
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+service-account*.json
+
+# Local / personal artifacts
 .DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Editor & OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Test / Playwright
+test-results/
+playwright-report/
+playwright/.cache/
+blob-report/
+
+# Backups & exports that may contain personal finance data
+*.backup.json
+debt-destroyer-backup-*.json
+exports/
+tmp/
+temp/
