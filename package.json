@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "node scripts/test-theme.mjs",
     "test:theme": "node scripts/test-theme.mjs",
-    "test:e2e-theme": "node scripts/e2e-theme.mjs"
+    "test:e2e-theme": "node scripts/e2e-theme.mjs",
+    "health": "node scripts/health.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.57.4",
@@ -17,13 +18,13 @@
     "lucide-react": "0.468.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "recharts": "2.15.4"
+    "recharts": "^3.10.0"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
-    "@vitejs/plugin-react": "4.3.4",
+    "@vitejs/plugin-react": "^6.0.3",
     "playwright": "^1.61.1",
-    "vite": "5.4.19"
+    "vite": "^8.1.5"
   },
   "engines": {
     "node": ">=20.19.0"
