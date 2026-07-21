@@ -20,8 +20,23 @@ export default defineConfig({
               priority: 15
             },
             {
-              name: 'pdf-vendor',
-              test: /node_modules[\\/](jspdf|@babel|canvg|core-js|css-line-break|dompurify|fflate|html2canvas|raf|rgbcolor|text-segmentation)[\\/]/,
+              name: 'pdf-core-vendor',
+              test: /node_modules[\\/](jspdf|fflate)[\\/]/,
+              priority: 16
+            },
+            {
+              name: 'canvas-vendor',
+              test: /node_modules[\\/](html2canvas|css-line-break|text-segmentation)[\\/]/,
+              priority: 16
+            },
+            {
+              name: 'svg-vendor',
+              test: /node_modules[\\/](canvg|raf|rgbcolor)[\\/]/,
+              priority: 16
+            },
+            {
+              name: 'polyfill-vendor',
+              test: /node_modules[\\/](@babel|core-js|dompurify)[\\/]/,
               priority: 15
             },
             {
