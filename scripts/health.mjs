@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 
 const PREVIEW_ORIGIN = "http://127.0.0.1:4176";
 const PREVIEW_URL = `${PREVIEW_ORIGIN}/`;
+const isWindows = process.platform === "win32";
 
 const localOnlyEnv = {
   ...process.env,
@@ -15,7 +16,7 @@ function run(command, args, options = {}) {
     console.log(`\n$ ${[command, ...args].join(" ")}`);
     const child = spawn(command, args, {
       stdio: "inherit",
-      shell: process.platform === "win32",
+      shell: isWindows,
       ...options,
     });
 
@@ -35,7 +36,8 @@ function startPreview() {
   console.log(`\n$ npm run preview -- --host 127.0.0.1 --port 4176 --strictPort`);
   const child = spawn("npm", ["run", "preview", "--", "--host", "127.0.0.1", "--port", "4176", "--strictPort"], {
     env: localOnlyEnv,
-    shell: process.platform === "win32",
+    detached: !isWindows,
+    shell: isWindows,
     stdio: ["ignore", "pipe", "pipe"],
   });
 
@@ -68,16 +70,29 @@ async function waitForPreview(child, timeoutMs = 30_000) {
 async function stopPreview(child) {
   if (child.exitCode !== null) return;
 
-  child.kill("SIGTERM");
+  signalPreview(child, "SIGTERM");
   await Promise.race([
     new Promise((resolve) => child.once("exit", resolve)),
     new Promise((resolve) => {
       setTimeout(() => {
-        if (child.exitCode === null) child.kill("SIGKILL");
+        if (child.exitCode === null) signalPreview(child, "SIGKILL");
         resolve();
       }, 5_000);
     }),
   ]);
+}
+
+function signalPreview(child, signal) {
+  try {
+    if (isWindows) {
+      child.kill(signal);
+      return;
+    }
+
+    process.kill(-child.pid, signal);
+  } catch (error) {
+    if (error.code !== "ESRCH") throw error;
+  }
 }
 
 let preview;
