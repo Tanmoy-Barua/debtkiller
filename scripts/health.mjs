@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { chromium } from "playwright";
 
 const PREVIEW_ORIGIN = "http://127.0.0.1:4176";
 const PREVIEW_URL = `${PREVIEW_ORIGIN}/`;
@@ -44,6 +46,17 @@ function startPreview() {
   child.stdout.on("data", (chunk) => process.stdout.write(chunk));
   child.stderr.on("data", (chunk) => process.stderr.write(chunk));
   return child;
+}
+
+async function ensurePlaywrightChromium() {
+  const executablePath = chromium.executablePath();
+  if (existsSync(executablePath)) return;
+
+  console.log("\nPlaywright Chromium is missing; installing it for the e2e smoke test.");
+  const installArgs = ["playwright", "install"];
+  if (!isWindows) installArgs.push("--with-deps");
+  installArgs.push("chromium");
+  await run("npx", installArgs);
 }
 
 async function waitForPreview(child, timeoutMs = 30_000) {
@@ -101,6 +114,7 @@ try {
   await run("npm", ["audit", "--audit-level=moderate"]);
   await run("npm", ["test"]);
   await run("npm", ["run", "build"], { env: localOnlyEnv });
+  await ensurePlaywrightChromium();
 
   preview = startPreview();
   await waitForPreview(preview);
