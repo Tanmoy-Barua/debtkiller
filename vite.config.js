@@ -18,8 +18,20 @@ export default defineConfig({
               test: /node_modules\/(recharts|d3-|victory-vendor)\//,
             },
             {
-              name: "pdf",
-              test: /node_modules\/(jspdf|html2canvas|dompurify|canvg|rgbcolor|stackblur-canvas|fflate|core-js)\//,
+              name: "pdf-core",
+              test: /node_modules\/(jspdf|fflate)\//,
+            },
+            {
+              name: "canvas",
+              test: /node_modules\/(html2canvas|stackblur-canvas)\//,
+            },
+            {
+              name: "svg-render",
+              test: /node_modules\/(canvg|rgbcolor)\//,
+            },
+            {
+              name: "sanitize-polyfills",
+              test: /node_modules\/(dompurify|core-js)\//,
             },
             {
               name: "icons",
