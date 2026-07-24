@@ -92,6 +92,7 @@ function stopPreview(child) {
 }
 
 let preview;
+let stoppingPreview = false;
 
 try {
   await run("npm", ["audit", "--audit-level=moderate"]);
@@ -101,6 +102,7 @@ try {
 
   preview = startPreview();
   preview.on("exit", (code, signal) => {
+    if (stoppingPreview) return;
     if (code !== null && code !== 0) {
       console.error(`Vite preview exited early with code ${code}`);
     } else if (signal) {
@@ -114,5 +116,6 @@ try {
   });
   console.log("\nApplication health check passed.");
 } finally {
+  stoppingPreview = true;
   stopPreview(preview);
 }
