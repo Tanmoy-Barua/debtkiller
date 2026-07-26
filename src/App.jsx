@@ -194,6 +194,28 @@ const weekWindow = (today) => {
 
 const incomeOfEntry = (e) => (Number(e.gross) || 0) + (Number(e.other) || 0);
 
+/** Desktop shell / multi-column layouts kick in at this width. */
+const DESKTOP_BP = 900;
+
+function useIsDesktop(breakpoint = DESKTOP_BP) {
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia(`(min-width: ${breakpoint}px)`).matches : false
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const mq = window.matchMedia(`(min-width: ${breakpoint}px)`);
+    const onChange = () => setIsDesktop(mq.matches);
+    onChange();
+    if (mq.addEventListener) mq.addEventListener("change", onChange);
+    else mq.addListener(onChange);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", onChange);
+      else mq.removeListener(onChange);
+    };
+  }, [breakpoint]);
+  return isDesktop;
+}
+
 async function shareOrDownloadBlob(blob, filename, title, flash) {
   const file = new File([blob], filename, { type: blob.type });
   try {
@@ -507,6 +529,8 @@ export default function App() {
   const applyingRemote = useRef(false);
   const importInputRef = useRef(null);
   const appliedThemeRef = useRef("dark");
+  const isDesktop = useIsDesktop();
+  const isWideDesktop = useIsDesktop(1100);
 
   const applyState = (s) => {
     if (!s || typeof s !== "object") return;
@@ -1313,6 +1337,148 @@ export default function App() {
     { id: "charts", label: "Charts", icon: BarChart3 },
     { id: "settings", label: "Settings", icon: SettingsIcon },
   ];
+  const activeTab = TABS.find((t) => t.id === tab) || TABS[0];
+  const syncLabel =
+    syncStatus === "synced"
+      ? "● CLOUD SAVED"
+      : syncStatus === "saving"
+        ? "● SAVING…"
+        : syncStatus === "connecting"
+          ? "● CONNECTING…"
+          : syncStatus === "error"
+            ? "● LOCAL BACKUP"
+            : "● LOCAL ONLY";
+  const syncColor =
+    syncStatus === "synced" ? C.green : syncStatus === "error" ? C.red : C.faint;
+
+  const homeProps = {
+    desktop: isDesktop,
+    wide: isWideDesktop,
+    showEveningNudge,
+    totalDailyAim,
+    earnedToday,
+    setNudgeDismissed,
+    alerts,
+    daysToFree,
+    weeksToFree,
+    projectedFreeISO,
+    remainingDebt,
+    pctPaid,
+    streak,
+    baseDaily,
+    gasToday,
+    gasThisMonth,
+    netAfterFuelToday,
+    planMonth,
+    adjustedDaily,
+    dailyGasBudget,
+    runningSurplus,
+    daysRemainingIncl,
+    pastShortfall,
+    dailyCatchUpBump,
+    effectiveHourly,
+    hoursThisMonth,
+    earnedThisMonth,
+    bestDays,
+    debts,
+    today,
+    leftoverForExtraDebt,
+    buffer,
+    settings,
+    availableAfterTaxAndExpenses,
+    logPayment,
+    paymentHistory,
+    gasThisWeek,
+    gasWeekBudget,
+    gasMonthBudget,
+    earnings,
+    incomeOf,
+    originalTotal,
+    paceDelta,
+    plan,
+    whatIfExtra,
+    setWhatIfExtra,
+    whatIfDate,
+    overallDailyAvg,
+    customDaily,
+    applyWhatIfAsTarget,
+    clearCustomDaily,
+    setSettings,
+    projectedGrossMonth,
+    projectedTaxMonth,
+    projectedSpendMonth,
+    debtPaidThisMonth,
+    monthlyMins,
+    projectedAfterLoans,
+    curMonth,
+    monthTarget,
+    projectedMonthEnd,
+    spentThisMonth,
+    shareCloseOutImage,
+    shareCloseOutPdf,
+    taxWallet,
+    taxReserve,
+    withdrawTax,
+    syncTaxWalletToExpected,
+    fundBuffer,
+    addEarning,
+    addExpense,
+  };
+
+  const mainContent = (
+    <>
+      {tab === "home" && <HomeView {...homeProps} />}
+      {tab === "debts" && (
+        <DebtsView
+          desktop={isDesktop}
+          debts={debts}
+          today={today}
+          onPay={logPayment}
+          onAdd={addDebt}
+          onUpdate={updateDebt}
+          onDelete={deleteDebt}
+        />
+      )}
+      {tab === "money" && (
+        <MoneyView
+          desktop={isDesktop}
+          earnings={earnings}
+          expenses={expenses}
+          recurring={recurring}
+          onEarn={addEarning}
+          onExpense={addExpense}
+          onUpdateExpense={updateExpense}
+          onUpdateEarning={updateEarning}
+          onRemove={removeEntry}
+          onAddRecurring={addRecurring}
+          onRemoveRecurring={removeRecurring}
+          onLogRecurring={logRecurringNow}
+        />
+      )}
+      {tab === "charts" && (
+        <ChartsView
+          desktop={isDesktop}
+          earningsData={earningsChartData}
+          debtData={debtChartData}
+          curMonth={curMonth}
+          baseDaily={baseDaily}
+        />
+      )}
+      {tab === "settings" && (
+        <SettingsView
+          desktop={isDesktop}
+          settings={settings}
+          setSettings={setSettings}
+          onExport={exportJSON}
+          onExportCsv={exportCSV}
+          onImportClick={() => importInputRef.current?.click()}
+          onReset={resetAll}
+          onSignOut={cloudEnabled ? handleSignOut : null}
+          accountEmail={session?.user?.email || null}
+        />
+      )}
+    </>
+  );
 
   return (
     <div style={page} data-theme={C.mode} data-theme-tick={themeTick}>
@@ -1322,210 +1488,7 @@ export default function App() {
           <Trophy size={18} /> {celebrate} 🎉
         </div>
       )}
-      {toast && <div style={toastStyle}>{toast}</div>}
-
-      <div style={{ maxWidth: 680, margin: "0 auto", padding: "0 16px 104px" }}>
-        {/* Masthead */}
-        <header style={{ paddingTop: 18, paddingBottom: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <div style={badgeIcon}><Car size={16} color={C.asphalt} /></div>
-            <div>
-              <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 17, letterSpacing: -0.3, lineHeight: 1 }}>
-                Debt Destroyer
-              </div>
-              <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint, letterSpacing: 1, marginTop: 3 }}>
-                ROAD TO DEBT-FREE
-              </div>
-            </div>
-            <div style={{ marginLeft: "auto", textAlign: "right" }}>
-              <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint }}>PLAN</div>
-              <div style={{ fontFamily: FONT_DISP, fontWeight: 600, fontSize: 13, color: C.lane }}>
-                {settings.activePlan} · {plan.label}
-              </div>
-              <div style={{ fontFamily: FONT_MONO, fontSize: 9.5, marginTop: 4, color: syncStatus === "synced" ? C.green : syncStatus === "error" ? C.red : C.faint }}>
-                {syncStatus === "synced" ? "● CLOUD SAVED" : syncStatus === "saving" ? "● SAVING…" : syncStatus === "connecting" ? "● CONNECTING…" : syncStatus === "error" ? "● LOCAL BACKUP" : "● LOCAL ONLY"}
-              </div>
-            </div>
-          </div>
-        </header>
-
-        {tab === "home" && (
-          <>
-            {showEveningNudge && (
-              <EveningNudge
-                shortfall={Math.max(0, totalDailyAim - earnedToday)}
-                onDismiss={() => setNudgeDismissed(true)}
-                onEnablePush={() => {
-                  if (typeof Notification !== "undefined") Notification.requestPermission();
-                }}
-              />
-            )}
-            {alerts.length > 0 && <AlertsBanner alerts={alerts} />}
-            <CountdownCard
-              days={daysToFree}
-              weeks={weeksToFree}
-              freeISO={projectedFreeISO}
-              remaining={remainingDebt}
-              pctPaid={pctPaid}
-            />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-              <StreakCard streak={streak} target={totalDailyAim || baseDaily} />
-              <GasNetCard earnedToday={earnedToday} gasToday={gasToday} gasMonth={gasThisMonth} net={netAfterFuelToday} />
-            </div>
-            <DailyTargetCard
-              planMonth={planMonth}
-              earnedToday={earnedToday}
-              baseDaily={baseDaily}
-              adjustedDaily={adjustedDaily}
-              dailyGasBudget={dailyGasBudget}
-              runningSurplus={runningSurplus}
-              daysRemaining={daysRemainingIncl}
-              pastShortfall={pastShortfall}
-              dailyCatchUpBump={dailyCatchUpBump}
-            />
-            <ShiftStatsCard
-              effectiveHourly={effectiveHourly}
-              hoursThisMonth={hoursThisMonth}
-              earnedThisMonth={earnedThisMonth}
-              bestDays={bestDays}
-            />
-            <PaymentScheduleCard
-              debts={debts}
-              today={today}
-              method={settings.payoffMethod}
-              leftoverForExtraDebt={leftoverForExtraDebt}
-              buffer={buffer}
-              bufferGoal={settings.bufferGoal}
-              available={availableAfterTaxAndExpenses}
-              onMarkPaid={logPayment}
-            />
-            <PaymentHistoryCard rows={paymentHistory} />
-            <GasBudgetCard
-              gasWeek={gasThisWeek}
-              weekBudget={gasWeekBudget}
-              gasMonth={gasThisMonth}
-              monthBudget={gasMonthBudget}
-              dailyBudget={dailyGasBudget}
-            />
-            <WeeklyReviewCard
-              today={today}
-              earnings={earnings}
-              baseDaily={baseDaily}
-              adjustedDaily={adjustedDaily}
-              planMonth={planMonth}
-              incomeOf={incomeOf}
-            />
-            <Hero
-              remaining={remainingDebt}
-              originalTotal={originalTotal}
-              pctPaid={pctPaid}
-              debts={debts}
-              projectedFreeISO={projectedFreeISO}
-              planFreeISO={plan.freeDate}
-              paceDelta={paceDelta}
-            />
-            <WhatIfCard
-              extra={whatIfExtra}
-              setExtra={setWhatIfExtra}
-              whatIfDate={whatIfDate}
-              remaining={remainingDebt}
-              baselineDaily={overallDailyAvg || baseDaily}
-              customDaily={customDaily}
-              onApply={applyWhatIfAsTarget}
-              onClear={clearCustomDaily}
-            />
-            <InterestDragCard debts={debts} />
-            <SmartPayoffCard
-              debts={debts}
-              today={today}
-              available={availableAfterTaxAndExpenses}
-              buffer={buffer}
-              bufferGoal={settings.bufferGoal}
-              leftoverForExtraDebt={leftoverForExtraDebt}
-              method={settings.payoffMethod}
-              onMethodChange={(m) => setSettings((s) => ({ ...s, payoffMethod: m }))}
-            />
-            <NetProjectionCard
-              projectedGross={projectedGrossMonth}
-              projectedTax={projectedTaxMonth}
-              projectedSpend={projectedSpendMonth}
-              debtPaidThisMonth={debtPaidThisMonth}
-              monthlyMins={monthlyMins}
-              projectedAfterLoans={projectedAfterLoans}
-              leftoverForExtraDebt={leftoverForExtraDebt}
-            />
-            <MonthlyDashboard
-              curMonth={curMonth}
-              monthTarget={monthTarget}
-              earnedThisMonth={earnedThisMonth}
-              projectedMonthEnd={projectedMonthEnd}
-              daysRemaining={daysRemainingIncl}
-              spentThisMonth={spentThisMonth}
-              baseline={settings.monthlyBaseline}
-              hasPlan={!!planMonth}
-            />
-            <MonthReportCard
-              onShareImage={shareCloseOutImage}
-              onSharePdf={shareCloseOutPdf}
-              curMonth={curMonth}
-              earned={earnedThisMonth}
-              spent={spentThisMonth}
-              debtPaid={debtPaidThisMonth}
-              taxWallet={taxWallet}
-              monthTarget={monthTarget}
-              plan={settings.activePlan}
-            />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <TaxWalletCard
-                wallet={taxWallet}
-                expected={taxReserve}
-                rate={settings.taxRate}
-                onWithdraw={withdrawTax}
-                onSyncExpected={syncTaxWalletToExpected}
-              />
-              <BufferCard buffer={buffer} goal={settings.bufferGoal} onFund={fundBuffer} />
-            </div>
-            <QuickLog onEarn={addEarning} onExpense={addExpense} />
-          </>
-        )}
-
-        {tab === "debts" && (
-          <DebtsView debts={debts} today={today} onPay={logPayment} onAdd={addDebt} onUpdate={updateDebt} onDelete={deleteDebt} />
-        )}
-
-        {tab === "money" && (
-          <MoneyView
-            earnings={earnings}
-            expenses={expenses}
-            recurring={recurring}
-            onEarn={addEarning}
-            onExpense={addExpense}
-            onUpdateExpense={updateExpense}
-            onUpdateEarning={updateEarning}
-            onRemove={removeEntry}
-            onAddRecurring={addRecurring}
-            onRemoveRecurring={removeRecurring}
-            onLogRecurring={logRecurringNow}
-          />
-        )}
-
-        {tab === "charts" && (
-          <ChartsView earningsData={earningsChartData} debtData={debtChartData} curMonth={curMonth} baseDaily={baseDaily} />
-        )}
-
-        {tab === "settings" && (
-          <SettingsView
-            settings={settings}
-            setSettings={setSettings}
-            onExport={exportJSON}
-            onExportCsv={exportCSV}
-            onImportClick={() => importInputRef.current?.click()}
-            onReset={resetAll}
-            onSignOut={cloudEnabled ? handleSignOut : null}
-            accountEmail={session?.user?.email || null}
-          />
-        )}
-      </div>
+      {toast && <div style={{ ...toastStyle, bottom: isDesktop ? 28 : 74 }}>{toast}</div>}
 
       <input
         ref={importInputRef}
@@ -1535,21 +1498,97 @@ export default function App() {
         onChange={(e) => e.target.files[0] && importJSON(e.target.files[0])}
       />
 
-      {/* Bottom nav */}
-      <nav style={bottomNav}>
-        <div style={{ maxWidth: 680, margin: "0 auto", display: "flex" }}>
-          {TABS.map((t) => {
-            const Icon = t.icon;
-            const on = tab === t.id;
-            return (
-              <button key={t.id} onClick={() => setTab(t.id)} style={navBtn(on)}>
-                <Icon size={19} />
-                <span style={{ fontSize: 10, fontFamily: FONT_BODY, fontWeight: on ? 600 : 500 }}>{t.label}</span>
-              </button>
-            );
-          })}
+      {isDesktop ? (
+        <div style={desktopShell}>
+          <aside style={desktopSidebar}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 22 }}>
+              <div style={badgeIcon}><Car size={16} color={C.asphalt} /></div>
+              <div>
+                <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 16, letterSpacing: -0.3, lineHeight: 1.1 }}>
+                  Debt Destroyer
+                </div>
+                <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint, letterSpacing: 1, marginTop: 4 }}>
+                  ROAD TO DEBT-FREE
+                </div>
+              </div>
+            </div>
+            <div style={{ padding: "10px 12px", borderRadius: 12, background: C.asphalt, border: `1px solid ${C.lineSoft}`, marginBottom: 18 }}>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint }}>PLAN</div>
+              <div style={{ fontFamily: FONT_DISP, fontWeight: 600, fontSize: 14, color: C.lane, marginTop: 3 }}>
+                {settings.activePlan} · {plan.label}
+              </div>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 10, marginTop: 6, color: syncColor }}>{syncLabel}</div>
+            </div>
+            <nav style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
+              {TABS.map((t) => {
+                const Icon = t.icon;
+                const on = tab === t.id;
+                return (
+                  <button key={t.id} type="button" onClick={() => setTab(t.id)} style={sideNavBtn(on)}>
+                    <Icon size={17} />
+                    <span>{t.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint, marginTop: 16, lineHeight: 1.4 }}>
+              Desktop command center
+            </div>
+          </aside>
+          <main style={desktopMain}>
+            <header style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 18, gap: 12 }}>
+              <div>
+                <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 22, letterSpacing: -0.4 }}>{activeTab.label}</div>
+                <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.faint, marginTop: 4 }}>
+                  {tab === "home" ? "Today’s focus · multi-column cockpit" : `${activeTab.label} workspace`}
+                </div>
+              </div>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: syncColor }}>{syncLabel}</div>
+            </header>
+            {mainContent}
+          </main>
         </div>
-      </nav>
+      ) : (
+        <>
+          <div style={{ maxWidth: 680, margin: "0 auto", padding: "0 14px 104px" }}>
+            <header style={{ paddingTop: 16, paddingBottom: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                <div style={badgeIcon}><Car size={16} color={C.asphalt} /></div>
+                <div>
+                  <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 17, letterSpacing: -0.3, lineHeight: 1 }}>
+                    Debt Destroyer
+                  </div>
+                  <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint, letterSpacing: 1, marginTop: 3 }}>
+                    ROAD TO DEBT-FREE
+                  </div>
+                </div>
+                <div style={{ marginLeft: "auto", textAlign: "right" }}>
+                  <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint }}>PLAN</div>
+                  <div style={{ fontFamily: FONT_DISP, fontWeight: 600, fontSize: 13, color: C.lane }}>
+                    {settings.activePlan} · {plan.label}
+                  </div>
+                  <div style={{ fontFamily: FONT_MONO, fontSize: 9.5, marginTop: 4, color: syncColor }}>{syncLabel}</div>
+                </div>
+              </div>
+            </header>
+            {mainContent}
+          </div>
+          <nav style={bottomNav}>
+            <div style={{ maxWidth: 680, margin: "0 auto", display: "flex" }}>
+              {TABS.map((t) => {
+                const Icon = t.icon;
+                const on = tab === t.id;
+                return (
+                  <button key={t.id} type="button" onClick={() => setTab(t.id)} style={navBtn(on)}>
+                    <Icon size={19} />
+                    <span style={{ fontSize: 10, fontFamily: FONT_BODY, fontWeight: on ? 600 : 500 }}>{t.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
+        </>
+      )}
     </div>
   );
 }
@@ -1557,6 +1596,276 @@ export default function App() {
 /* ================================================================== */
 /*  Components                                                          */
 /* ================================================================== */
+
+function HomeView(p) {
+  const alertsBlock = (
+    <>
+      {p.showEveningNudge && (
+        <EveningNudge
+          shortfall={Math.max(0, p.totalDailyAim - p.earnedToday)}
+          onDismiss={() => p.setNudgeDismissed(true)}
+          onEnablePush={() => {
+            if (typeof Notification !== "undefined") Notification.requestPermission();
+          }}
+        />
+      )}
+      {p.alerts.length > 0 && <AlertsBanner alerts={p.alerts} />}
+    </>
+  );
+
+  const targetCard = (
+    <DailyTargetCard
+      planMonth={p.planMonth}
+      earnedToday={p.earnedToday}
+      baseDaily={p.baseDaily}
+      adjustedDaily={p.adjustedDaily}
+      dailyGasBudget={p.dailyGasBudget}
+      runningSurplus={p.runningSurplus}
+      daysRemaining={p.daysRemainingIncl}
+      pastShortfall={p.pastShortfall}
+      dailyCatchUpBump={p.dailyCatchUpBump}
+    />
+  );
+
+  const streakGas = (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: p.desktop ? 0 : 16 }}>
+      <StreakCard streak={p.streak} target={p.totalDailyAim || p.baseDaily} />
+      <GasNetCard earnedToday={p.earnedToday} gasToday={p.gasToday} gasMonth={p.gasThisMonth} net={p.netAfterFuelToday} />
+    </div>
+  );
+
+  const schedule = (
+    <PaymentScheduleCard
+      debts={p.debts}
+      today={p.today}
+      method={p.settings.payoffMethod}
+      leftoverForExtraDebt={p.leftoverForExtraDebt}
+      buffer={p.buffer}
+      bufferGoal={p.settings.bufferGoal}
+      available={p.availableAfterTaxAndExpenses}
+      onMarkPaid={p.logPayment}
+    />
+  );
+
+  const quickLog = <QuickLog onEarn={p.addEarning} onExpense={p.addExpense} />;
+
+  const countdown = (
+    <CountdownCard
+      days={p.daysToFree}
+      weeks={p.weeksToFree}
+      freeISO={p.projectedFreeISO}
+      remaining={p.remainingDebt}
+      pctPaid={p.pctPaid}
+    />
+  );
+
+  const shiftStats = (
+    <ShiftStatsCard
+      effectiveHourly={p.effectiveHourly}
+      hoursThisMonth={p.hoursThisMonth}
+      earnedThisMonth={p.earnedThisMonth}
+      bestDays={p.bestDays}
+    />
+  );
+
+  const gasBudget = (
+    <GasBudgetCard
+      gasWeek={p.gasThisWeek}
+      weekBudget={p.gasWeekBudget}
+      gasMonth={p.gasThisMonth}
+      monthBudget={p.gasMonthBudget}
+      dailyBudget={p.dailyGasBudget}
+    />
+  );
+
+  const paymentHistory = <PaymentHistoryCard rows={p.paymentHistory} />;
+
+  const weekly = (
+    <WeeklyReviewCard
+      today={p.today}
+      earnings={p.earnings}
+      baseDaily={p.baseDaily}
+      adjustedDaily={p.adjustedDaily}
+      planMonth={p.planMonth}
+      incomeOf={p.incomeOf}
+    />
+  );
+
+  const hero = (
+    <Hero
+      remaining={p.remainingDebt}
+      originalTotal={p.originalTotal}
+      pctPaid={p.pctPaid}
+      debts={p.debts}
+      projectedFreeISO={p.projectedFreeISO}
+      planFreeISO={p.plan.freeDate}
+      paceDelta={p.paceDelta}
+    />
+  );
+
+  const whatIf = (
+    <WhatIfCard
+      extra={p.whatIfExtra}
+      setExtra={p.setWhatIfExtra}
+      whatIfDate={p.whatIfDate}
+      remaining={p.remainingDebt}
+      baselineDaily={p.overallDailyAvg || p.baseDaily}
+      customDaily={p.customDaily}
+      onApply={p.applyWhatIfAsTarget}
+      onClear={p.clearCustomDaily}
+    />
+  );
+
+  const interest = <InterestDragCard debts={p.debts} />;
+
+  const smartPayoff = (
+    <SmartPayoffCard
+      debts={p.debts}
+      today={p.today}
+      available={p.availableAfterTaxAndExpenses}
+      buffer={p.buffer}
+      bufferGoal={p.settings.bufferGoal}
+      leftoverForExtraDebt={p.leftoverForExtraDebt}
+      method={p.settings.payoffMethod}
+      onMethodChange={(m) => p.setSettings((s) => ({ ...s, payoffMethod: m }))}
+    />
+  );
+
+  const netProj = (
+    <NetProjectionCard
+      projectedGross={p.projectedGrossMonth}
+      projectedTax={p.projectedTaxMonth}
+      projectedSpend={p.projectedSpendMonth}
+      debtPaidThisMonth={p.debtPaidThisMonth}
+      monthlyMins={p.monthlyMins}
+      projectedAfterLoans={p.projectedAfterLoans}
+      leftoverForExtraDebt={p.leftoverForExtraDebt}
+    />
+  );
+
+  const monthly = (
+    <MonthlyDashboard
+      curMonth={p.curMonth}
+      monthTarget={p.monthTarget}
+      earnedThisMonth={p.earnedThisMonth}
+      projectedMonthEnd={p.projectedMonthEnd}
+      daysRemaining={p.daysRemainingIncl}
+      spentThisMonth={p.spentThisMonth}
+      baseline={p.settings.monthlyBaseline}
+      hasPlan={!!p.planMonth}
+    />
+  );
+
+  const closeOut = (
+    <MonthReportCard
+      onShareImage={p.shareCloseOutImage}
+      onSharePdf={p.shareCloseOutPdf}
+      curMonth={p.curMonth}
+      earned={p.earnedThisMonth}
+      spent={p.spentThisMonth}
+      debtPaid={p.debtPaidThisMonth}
+      taxWallet={p.taxWallet}
+      monthTarget={p.monthTarget}
+      plan={p.settings.activePlan}
+    />
+  );
+
+  const taxBuffer = (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <TaxWalletCard
+        wallet={p.taxWallet}
+        expected={p.taxReserve}
+        rate={p.settings.taxRate}
+        onWithdraw={p.withdrawTax}
+        onSyncExpected={p.syncTaxWalletToExpected}
+      />
+      <BufferCard buffer={p.buffer} goal={p.settings.bufferGoal} onFund={p.fundBuffer} />
+    </div>
+  );
+
+  if (p.desktop) {
+    if (!p.wide) {
+      return (
+        <div style={{ ...desktopHomeGrid, gridTemplateColumns: "minmax(300px, 1.15fr) minmax(300px, 1fr)" }}>
+          <div style={desktopCol}>
+            {alertsBlock}
+            {targetCard}
+            {schedule}
+            {quickLog}
+            {taxBuffer}
+          </div>
+          <div style={desktopCol}>
+            {countdown}
+            {streakGas}
+            {shiftStats}
+            {gasBudget}
+            {paymentHistory}
+            {monthly}
+            {closeOut}
+            {whatIf}
+            {weekly}
+            {hero}
+            {interest}
+            {smartPayoff}
+            {netProj}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div style={desktopHomeGrid}>
+        <div style={desktopCol}>
+          {alertsBlock}
+          {targetCard}
+          {schedule}
+          {quickLog}
+        </div>
+        <div style={desktopCol}>
+          {countdown}
+          {streakGas}
+          {shiftStats}
+          {monthly}
+          {closeOut}
+          {weekly}
+          {hero}
+        </div>
+        <div style={desktopRail}>
+          {taxBuffer}
+          {gasBudget}
+          {paymentHistory}
+          {whatIf}
+          {interest}
+          {smartPayoff}
+          {netProj}
+        </div>
+      </div>
+    );
+  }
+
+  // Mobile: focus strip first, then secondary cards
+  return (
+    <>
+      {alertsBlock}
+      {targetCard}
+      {streakGas}
+      {schedule}
+      {quickLog}
+      {countdown}
+      {shiftStats}
+      {gasBudget}
+      {paymentHistory}
+      {weekly}
+      {hero}
+      {whatIf}
+      {interest}
+      {smartPayoff}
+      {netProj}
+      {monthly}
+      {closeOut}
+      {taxBuffer}
+    </>
+  );
+}
 
 function LoginScreen({ onSignedIn }) {
   const [email, setEmail] = useState("");
@@ -2956,7 +3265,7 @@ function ExpenseForm({ onSubmit, expense, onCancel }) {
 }
 
 /* ---------- Debts view ---------- */
-function DebtsView({ debts, today, onPay, onAdd, onUpdate, onDelete }) {
+function DebtsView({ debts, today, onPay, onAdd, onUpdate, onDelete, desktop = false }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("active");
   const [sort, setSort] = useState("priority");
@@ -2980,10 +3289,10 @@ function DebtsView({ debts, today, onPay, onAdd, onUpdate, onDelete }) {
   const activeTotal = active.reduce((sum, d) => sum + asMoney(d.balance), 0);
   return (
     <div>
-      <section style={{ ...card, position: "sticky", top: 8, zIndex: 8, boxShadow: "0 10px 30px rgba(0,0,0,.22)" }}>
+      <section style={{ ...card, position: "sticky", top: desktop ? 0 : 8, zIndex: 8, boxShadow: "0 10px 30px rgba(0,0,0,.22)" }}>
         <div style={rowBetween}>
           <div>
-            <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 16 }}>Debt command center</div>
+            <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: desktop ? 18 : 16 }}>Debt command center</div>
             <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint, marginTop: 2 }}>{usd0(activeTotal)} across {active.length} active debts</div>
           </div>
           <button onClick={() => { setEditing(null); setShowForm(true); }} style={{ ...btnPrimary, padding: "8px 11px", fontSize: 12 }}>
@@ -3014,16 +3323,20 @@ function DebtsView({ debts, today, onPay, onAdd, onUpdate, onDelete }) {
       )}
 
       <SectionHeading>{shown.length} debt{shown.length === 1 ? "" : "s"}</SectionHeading>
-      {shown.length ? shown.map((d) => (
-        <DebtCard
-          key={d.id}
-          d={d}
-          today={today}
-          onPay={onPay}
-          onEdit={() => { setEditing(d); setShowForm(true); window.scrollTo?.({ top: 0, behavior: "smooth" }); }}
-          onDelete={() => onDelete(d.id)}
-        />
-      )) : (
+      {shown.length ? (
+        <div style={desktop ? { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } : undefined}>
+          {shown.map((d) => (
+            <DebtCard
+              key={d.id}
+              d={d}
+              today={today}
+              onPay={onPay}
+              onEdit={() => { setEditing(d); setShowForm(true); window.scrollTo?.({ top: 0, behavior: "smooth" }); }}
+              onDelete={() => onDelete(d.id)}
+            />
+          ))}
+        </div>
+      ) : (
         <div style={{ ...card, textAlign: "center", color: C.muted, fontFamily: FONT_MONO, fontSize: 12 }}>
           No debts match this view. Add a debt to start tracking it.
         </div>
@@ -3149,6 +3462,7 @@ function MoneyView({
   onAddRecurring,
   onRemoveRecurring,
   onLogRecurring,
+  desktop = false,
 }) {
   const [mode, setMode] = useState("earn");
   const [editingExpense, setEditingExpense] = useState(null);
@@ -3164,7 +3478,8 @@ function MoneyView({
   ].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id));
 
   return (
-    <div>
+    <div style={desktop ? { display: "grid", gridTemplateColumns: "minmax(300px, 1fr) minmax(340px, 1.15fr)", gap: 20, alignItems: "start" } : undefined}>
+      <div>
       <section style={card}>
         {editingEarning ? (
           <>
@@ -3274,7 +3589,9 @@ function MoneyView({
           </button>
         )}
       </section>
+      </div>
 
+      <div>
       <SectionHeading>History</SectionHeading>
       {feed.length === 0 && (
         <div style={{ ...card, textAlign: "center", color: C.muted, fontFamily: FONT_MONO, fontSize: 12 }}>
@@ -3320,17 +3637,20 @@ function MoneyView({
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
 
 /* ---------- Charts view ---------- */
-function ChartsView({ earningsData, debtData, curMonth, baseDaily }) {
+function ChartsView({ earningsData, debtData, curMonth, baseDaily, desktop = false }) {
+  const chartH = desktop ? 280 : 200;
   return (
-    <div>
+    <div style={desktop ? { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" } : undefined}>
+      <div>
       <SectionHeading>Earnings vs target · {monthLabel(curMonth + "-01")}</SectionHeading>
       <section style={card}>
-        <ResponsiveContainer width="100%" height={200}>
+        <ResponsiveContainer width="100%" height={chartH}>
           <LineChart data={earningsData} margin={{ top: 6, right: 6, left: -18, bottom: 0 }}>
             <CartesianGrid stroke={C.lineSoft} vertical={false} />
             <XAxis dataKey="day" tick={{ fill: C.faint, fontSize: 10, fontFamily: FONT_MONO }} interval={4} tickLine={false} axisLine={{ stroke: C.line }} />
@@ -3345,10 +3665,12 @@ function ChartsView({ earningsData, debtData, curMonth, baseDaily }) {
           <Legend color={C.lane} label={`Target ${usd0(baseDaily)}/day`} dashed />
         </div>
       </section>
+      </div>
 
+      <div>
       <SectionHeading>Total debt over time</SectionHeading>
       <section style={card}>
-        <ResponsiveContainer width="100%" height={200}>
+        <ResponsiveContainer width="100%" height={chartH}>
           <AreaChart data={debtData} margin={{ top: 6, right: 6, left: -18, bottom: 0 }}>
             <defs>
               <linearGradient id="debtGrad" x1="0" y1="0" x2="0" y2="1">
@@ -3367,16 +3689,18 @@ function ChartsView({ earningsData, debtData, curMonth, baseDaily }) {
           <Legend color={C.red} label="Remaining debt balance" />
         </div>
       </section>
+      </div>
     </div>
   );
 }
 
 /* ---------- Settings ---------- */
-function SettingsView({ settings, setSettings, onExport, onExportCsv, onImportClick, onReset, onSignOut, accountEmail }) {
+function SettingsView({ settings, setSettings, onExport, onExportCsv, onImportClick, onReset, onSignOut, accountEmail, desktop = false }) {
   const [confirmReset, setConfirmReset] = useState(false);
   const set = (k, v) => setSettings((s) => ({ ...s, [k]: v }));
   return (
-    <div>
+    <div style={desktop ? { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" } : undefined}>
+      <div>
       <SectionHeading>Bank connections</SectionHeading>
       <section style={{ ...card, opacity: 0.92, borderStyle: "dashed" }}>
         <div style={rowBetween}>
@@ -3490,7 +3814,9 @@ function SettingsView({ settings, setSettings, onExport, onExportCsv, onImportCl
         <NumberRow label="Tax set-aside rate" hint="Auto-reserved from income" value={Math.round(settings.taxRate * 100)} onChange={(v) => set("taxRate", (Number(v) || 0) / 100)} suffix="%" />
         <NumberRow label="Emergency buffer goal" hint="Car-repair reserve" value={settings.bufferGoal} onChange={(v) => set("bufferGoal", v)} prefix="$" last />
       </section>
+      </div>
 
+      <div>
       <SectionHeading>Daily gas</SectionHeading>
       <section style={card}>
         <NumberRow
@@ -3568,8 +3894,9 @@ function SettingsView({ settings, setSettings, onExport, onExportCsv, onImportCl
         )}
       </section>
 
-      <div style={{ textAlign: "center", fontFamily: FONT_MONO, fontSize: 10, color: C.faint, marginTop: 16 }}>
+      <div style={{ textAlign: "center", fontFamily: FONT_MONO, fontSize: 10, color: C.faint, marginTop: 16, gridColumn: desktop ? "1 / -1" : undefined }}>
         Total debt {usd(INITIAL_TOTAL)} · baseline as of {AS_OF}
+      </div>
       </div>
     </div>
   );
@@ -3714,6 +4041,12 @@ const bottomNav = {};
 const tooltip = {};
 const toastStyle = {};
 const celebrateBanner = {};
+const desktopShell = {};
+const desktopSidebar = {};
+const desktopMain = {};
+const desktopHomeGrid = {};
+const desktopCol = {};
+const desktopRail = {};
 const rowBetween = { display: "flex", alignItems: "center", justifyContent: "space-between" };
 
 function rebuildSharedStyles() {
@@ -3846,6 +4179,55 @@ function rebuildSharedStyles() {
     borderRadius: 12, padding: "10px 18px", fontFamily: FONT_DISP, fontWeight: 700, fontSize: 14,
     display: "flex", alignItems: "center", gap: 8, zIndex: 61,
   });
+  Object.assign(desktopShell, {
+    display: "flex",
+    minHeight: "100vh",
+    width: "100%",
+  });
+  Object.assign(desktopSidebar, {
+    width: 228,
+    flexShrink: 0,
+    padding: "22px 16px 20px",
+    borderRight: `1px solid ${C.line}`,
+    background: C.navBg || "rgba(10,14,20,0.92)",
+    backdropFilter: "blur(12px)",
+    display: "flex",
+    flexDirection: "column",
+    position: "sticky",
+    top: 0,
+    height: "100vh",
+    boxSizing: "border-box",
+  });
+  Object.assign(desktopMain, {
+    flex: 1,
+    minWidth: 0,
+    maxWidth: 1200,
+    padding: "22px 28px 40px",
+    boxSizing: "border-box",
+  });
+  Object.assign(desktopHomeGrid, {
+    display: "grid",
+    gridTemplateColumns: "minmax(280px, 1.35fr) minmax(260px, 1fr) minmax(240px, 0.95fr)",
+    gap: 16,
+    alignItems: "start",
+  });
+  Object.assign(desktopCol, {
+    display: "flex",
+    flexDirection: "column",
+    gap: 0,
+    minWidth: 0,
+  });
+  Object.assign(desktopRail, {
+    display: "flex",
+    flexDirection: "column",
+    gap: 0,
+    minWidth: 0,
+    position: "sticky",
+    top: 12,
+    maxHeight: "calc(100vh - 40px)",
+    overflowY: "auto",
+    paddingRight: 4,
+  });
 }
 
 function applyAppTheme(preference) {
@@ -3886,4 +4268,19 @@ const navBtn = (on) => ({
   padding: "10px 0 9px", background: "transparent", border: "none",
   color: on ? C.green : C.faint, cursor: "pointer",
 });
-
+const sideNavBtn = (on) => ({
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  width: "100%",
+  textAlign: "left",
+  padding: "11px 12px",
+  borderRadius: 10,
+  border: `1px solid ${on ? C.greenDim : "transparent"}`,
+  background: on ? "rgba(61,220,151,0.12)" : "transparent",
+  color: on ? C.green : C.muted,
+  fontFamily: FONT_DISP,
+  fontWeight: on ? 700 : 560,
+  fontSize: 13.5,
+  cursor: "pointer",
+});
