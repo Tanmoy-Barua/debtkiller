@@ -20,9 +20,14 @@ export default defineConfig({
               priority: 50,
             },
             {
-              name: 'pdf-vendor',
-              test: /[\\/]node_modules[\\/](jspdf|html2canvas|dompurify|@babel)[\\/]/,
+              name: 'jspdf-vendor',
+              test: /[\\/]node_modules[\\/](jspdf|@babel)[\\/]/,
               priority: 40,
+            },
+            {
+              name: 'canvas-vendor',
+              test: /[\\/]node_modules[\\/](html2canvas|dompurify)[\\/]/,
+              priority: 35,
             },
             {
               name: 'icons-vendor',
