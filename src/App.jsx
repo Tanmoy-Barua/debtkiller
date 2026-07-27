@@ -13,16 +13,16 @@ import {
   Tooltip, ResponsiveContainer, ReferenceLine
 } from "recharts";
 import { cloudEnabled, loadAppState, saveAppState, subscribeAppState, getSession, onAuthChange, signIn, signOut, emptyAppState, ownerEmailConfigured } from "./cloudStore.js";
-import { THEME_OPTIONS, paletteFor, resolveThemeMode } from "./theme.js";
+import { THEME_OPTIONS, paletteFor, resolveThemeMode, applyCssVars } from "./theme.js";
 
 /* ------------------------------------------------------------------ */
 /*  Palette — mutable so light/dark can repaint shared style objects    */
 /* ------------------------------------------------------------------ */
 const C = { ...paletteFor("dark") };
 
-const FONT_MONO = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace";
-const FONT_DISP = "'Space Grotesk', ui-sans-serif, system-ui, sans-serif";
-const FONT_BODY = "'Inter', ui-sans-serif, system-ui, sans-serif";
+const FONT_MONO = "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace";
+const FONT_DISP = "'Sora', ui-sans-serif, system-ui, sans-serif";
+const FONT_BODY = "'DM Sans', ui-sans-serif, system-ui, sans-serif";
 
 /* ------------------------------------------------------------------ */
 /*  Seed data (from spec)                                              */
@@ -569,18 +569,8 @@ export default function App() {
       l.id = id;
       l.rel = "stylesheet";
       l.href =
-        "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap";
+        "https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40;600;9..40;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap";
       document.head.appendChild(l);
-    }
-    const motionId = "dd-motion";
-    if (!document.getElementById(motionId)) {
-      const s = document.createElement("style");
-      s.id = motionId;
-      s.textContent = `
-        @keyframes ddRise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes ddLane{0%{background-position:0 0}100%{background-position:36px 0}}
-      `;
-      document.head.appendChild(s);
     }
   }, []);
 
@@ -1481,7 +1471,7 @@ export default function App() {
   );
 
   return (
-    <div style={page} data-theme={C.mode} data-theme-tick={themeTick}>
+    <div style={page} className="dd-page" data-theme={C.mode} data-theme-tick={themeTick}>
       {celebrate && <Confetti />}
       {celebrate && (
         <div style={celebrateBanner}>
@@ -1501,87 +1491,148 @@ export default function App() {
       {isDesktop ? (
         <div style={desktopShell}>
           <aside style={desktopSidebar}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 22 }}>
-              <div style={badgeIcon}><Car size={16} color={C.asphalt} /></div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 28 }}>
+              <div style={badgeIcon}><Car size={18} color={C.asphalt} strokeWidth={2.2} /></div>
               <div>
-                <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 16, letterSpacing: -0.3, lineHeight: 1.1 }}>
+                <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 17, letterSpacing: -0.4, lineHeight: 1.1 }}>
                   Debt Destroyer
                 </div>
-                <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint, letterSpacing: 1, marginTop: 4 }}>
-                  ROAD TO DEBT-FREE
+                <div style={{ fontFamily: FONT_MONO, fontSize: 9.5, color: C.faint, letterSpacing: 1.4, marginTop: 5, textTransform: "uppercase" }}>
+                  Road to debt-free
                 </div>
               </div>
             </div>
-            <div style={{ padding: "10px 12px", borderRadius: 12, background: C.asphalt, border: `1px solid ${C.lineSoft}`, marginBottom: 18 }}>
-              <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint }}>PLAN</div>
-              <div style={{ fontFamily: FONT_DISP, fontWeight: 600, fontSize: 14, color: C.lane, marginTop: 3 }}>
-                {settings.activePlan} · {plan.label}
+            <div style={{
+              padding: "14px 14px",
+              borderRadius: 16,
+              background: C.surface2Solid || C.surface2,
+              border: `1px solid ${C.line}`,
+              marginBottom: 22,
+              boxShadow: C.cardShadow,
+            }}>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 9, color: C.faint, letterSpacing: 1.2, textTransform: "uppercase" }}>Active plan</div>
+              <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 15, color: C.green, marginTop: 5 }}>
+                Plan {settings.activePlan}
+                <span style={{ color: C.muted, fontWeight: 500 }}> · {plan.label}</span>
               </div>
-              <div style={{ fontFamily: FONT_MONO, fontSize: 10, marginTop: 6, color: syncColor }}>{syncLabel}</div>
+              <div style={{
+                fontFamily: FONT_MONO, fontSize: 10, marginTop: 8, color: syncColor,
+                display: "flex", alignItems: "center", gap: 6,
+              }}>
+                <span style={{
+                  width: 6, height: 6, borderRadius: "50%",
+                  background: syncColor, display: "inline-block",
+                  boxShadow: `0 0 8px ${syncColor}`,
+                }} />
+                {syncLabel}
+              </div>
             </div>
-            <nav style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
+            <nav style={{ display: "flex", flexDirection: "column", gap: 5, flex: 1 }}>
               {TABS.map((t) => {
                 const Icon = t.icon;
                 const on = tab === t.id;
                 return (
-                  <button key={t.id} type="button" onClick={() => setTab(t.id)} style={sideNavBtn(on)}>
-                    <Icon size={17} />
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setTab(t.id)}
+                    style={sideNavBtn(on)}
+                    className="dd-nav-item"
+                  >
+                    <Icon size={18} strokeWidth={on ? 2.2 : 1.8} />
                     <span>{t.label}</span>
                   </button>
                 );
               })}
             </nav>
-            <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint, marginTop: 16, lineHeight: 1.4 }}>
-              Desktop command center
+            <div style={{
+              fontFamily: FONT_MONO, fontSize: 10, color: C.faint, marginTop: 20,
+              padding: "12px 14px", borderRadius: 12,
+              background: C.surface2Solid || C.surface2,
+              border: `1px solid ${C.lineSoft}`,
+              lineHeight: 1.5,
+            }}>
+              Precision payoff cockpit
             </div>
           </aside>
           <main style={desktopMain}>
-            <header style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 18, gap: 12 }}>
+            <header style={{
+              display: "flex", alignItems: "flex-end", justifyContent: "space-between",
+              marginBottom: 24, gap: 16, paddingBottom: 18,
+              borderBottom: `1px solid ${C.lineSoft}`,
+            }}>
               <div>
-                <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 22, letterSpacing: -0.4 }}>{activeTab.label}</div>
-                <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.faint, marginTop: 4 }}>
-                  {tab === "home" ? "Today’s focus · multi-column cockpit" : `${activeTab.label} workspace`}
+                <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 28, letterSpacing: -0.6, lineHeight: 1.1 }}>
+                  {activeTab.label}
+                </div>
+                <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: C.muted, marginTop: 6 }}>
+                  {tab === "home" ? "Your daily command center" : `Manage your ${activeTab.label.toLowerCase()}`}
                 </div>
               </div>
-              <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: syncColor }}>{syncLabel}</div>
+              <div style={{
+                fontFamily: FONT_MONO, fontSize: 11, color: syncColor,
+                padding: "8px 12px", borderRadius: 10,
+                background: C.surface2Solid || C.surface2,
+                border: `1px solid ${C.lineSoft}`,
+              }}>
+                {syncLabel}
+              </div>
             </header>
             {mainContent}
           </main>
         </div>
       ) : (
         <>
-          <div style={{ maxWidth: 680, margin: "0 auto", padding: "0 14px 104px" }}>
-            <header style={{ paddingTop: 16, paddingBottom: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                <div style={badgeIcon}><Car size={16} color={C.asphalt} /></div>
-                <div>
-                  <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 17, letterSpacing: -0.3, lineHeight: 1 }}>
+          <div style={{ maxWidth: 680, margin: "0 auto", padding: "0 16px 108px" }}>
+            <header style={{
+              paddingTop: 20, paddingBottom: 14,
+              position: "sticky", top: 0, zIndex: 30,
+              background: C.navBg,
+              backdropFilter: "blur(20px)",
+              WebkitBackdropFilter: "blur(20px)",
+              margin: "0 -16px", paddingLeft: 16, paddingRight: 16,
+              borderBottom: `1px solid ${C.lineSoft}`,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+                <div style={badgeIcon}><Car size={18} color={C.asphalt} strokeWidth={2.2} /></div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 18, letterSpacing: -0.35, lineHeight: 1 }}>
                     Debt Destroyer
                   </div>
-                  <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint, letterSpacing: 1, marginTop: 3 }}>
-                    ROAD TO DEBT-FREE
+                  <div style={{ fontFamily: FONT_MONO, fontSize: 9.5, color: C.faint, letterSpacing: 1.2, marginTop: 4, textTransform: "uppercase" }}>
+                    Road to debt-free
                   </div>
                 </div>
-                <div style={{ marginLeft: "auto", textAlign: "right" }}>
-                  <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint }}>PLAN</div>
-                  <div style={{ fontFamily: FONT_DISP, fontWeight: 600, fontSize: 13, color: C.lane }}>
+                <div style={{
+                  textAlign: "right", padding: "8px 10px", borderRadius: 12,
+                  background: C.surface2Solid || C.surface2,
+                  border: `1px solid ${C.lineSoft}`,
+                }}>
+                  <div style={{ fontFamily: FONT_MONO, fontSize: 9, color: C.faint, letterSpacing: 0.8 }}>PLAN</div>
+                  <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 13, color: C.green }}>
                     {settings.activePlan} · {plan.label}
                   </div>
-                  <div style={{ fontFamily: FONT_MONO, fontSize: 9.5, marginTop: 4, color: syncColor }}>{syncLabel}</div>
                 </div>
               </div>
             </header>
             {mainContent}
           </div>
-          <nav style={bottomNav}>
+          <nav style={bottomNav} className="dd-bottom-nav">
             <div style={{ maxWidth: 680, margin: "0 auto", display: "flex" }}>
               {TABS.map((t) => {
                 const Icon = t.icon;
                 const on = tab === t.id;
                 return (
-                  <button key={t.id} type="button" onClick={() => setTab(t.id)} style={navBtn(on)}>
-                    <Icon size={19} />
-                    <span style={{ fontSize: 10, fontFamily: FONT_BODY, fontWeight: on ? 600 : 500 }}>{t.label}</span>
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setTab(t.id)}
+                    style={navBtn(on)}
+                    className="dd-bottom-nav-item"
+                    data-active={on}
+                  >
+                    <Icon size={20} strokeWidth={on ? 2.2 : 1.8} />
+                    <span style={{ fontSize: 10, fontFamily: FONT_BODY, fontWeight: on ? 700 : 500 }}>{t.label}</span>
                   </button>
                 );
               })}
@@ -1895,29 +1946,31 @@ function LoginScreen({ onSignedIn }) {
   };
 
   return (
-    <div style={{ ...page, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, minHeight: "100vh" }}>
+    <div className="dd-page dd-login-shell" style={{ ...page, minHeight: "100vh" }}>
       <form
         onSubmit={submit}
+        className="dd-login-card"
         style={{
           width: "100%",
-          maxWidth: 400,
-          background: `linear-gradient(165deg, ${C.surface2} 0%, ${C.surface} 70%)`,
+          maxWidth: 420,
+          background: C.surfaceSolid || C.surface,
+          backdropFilter: "blur(24px)",
+          WebkitBackdropFilter: "blur(24px)",
           border: `1px solid ${C.line}`,
-          borderRadius: 18,
-          padding: "28px 22px 22px",
-          boxShadow: "0 24px 60px rgba(0,0,0,.45)",
-          animation: "ddRise .4s ease both",
+          borderRadius: 24,
+          padding: "32px 28px 26px",
+          boxShadow: C.cardShadow,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-          <div style={badgeIcon}><Car size={16} color={C.asphalt} /></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+          <div style={badgeIcon}><Car size={18} color={C.asphalt} strokeWidth={2.2} /></div>
           <div>
-            <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 20, letterSpacing: -0.4 }}>Debt Destroyer</div>
-            <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint, letterSpacing: 1.1, marginTop: 2 }}>OWNER ACCESS</div>
+            <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 22, letterSpacing: -0.5 }}>Debt Destroyer</div>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 9.5, color: C.faint, letterSpacing: 1.4, marginTop: 4, textTransform: "uppercase" }}>Owner access</div>
           </div>
         </div>
-        <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: C.muted, lineHeight: 1.5, margin: "14px 0 18px" }}>
-          Private owner login only. New account signup is turned off.
+        <div style={{ fontFamily: FONT_BODY, fontSize: 14, color: C.muted, lineHeight: 1.55, margin: "18px 0 22px" }}>
+          Sign in to your private payoff cockpit. New account signup is disabled.
         </div>
 
         <Field label="Email">
@@ -1928,6 +1981,7 @@ function LoginScreen({ onSignedIn }) {
             onChange={(e) => setEmail(e.target.value)}
             placeholder="owner@example.com"
             style={input}
+            className="dd-input"
             disabled={busy || locked}
           />
         </Field>
@@ -1941,6 +1995,7 @@ function LoginScreen({ onSignedIn }) {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               style={{ ...input, paddingRight: 72 }}
+              className="dd-input"
               disabled={busy || locked}
             />
             <button
@@ -1980,6 +2035,7 @@ function LoginScreen({ onSignedIn }) {
         <button
           type="submit"
           disabled={busy || locked}
+          className="dd-btn dd-btn-primary"
           style={{
             ...btnPrimary,
             width: "100%",
@@ -2242,7 +2298,7 @@ function InterestDragCard({ debts }) {
   const total = rows.reduce((s, r) => s + r.drag, 0);
   if (!rows.length) return null;
   return (
-    <section style={{ ...card, borderColor: C.amberDim }}>
+    <section className="dd-card" style={{ ...card, borderColor: C.amberDim }}>
       <div style={rowBetween}>
         <SectionLabel icon={Flame}>INTEREST DRAG</SectionLabel>
         <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.amber }}>THIS MONTH</span>
@@ -2314,7 +2370,7 @@ function PaymentScheduleCard({
 
   if (done) {
     return (
-      <section style={{ ...card, borderColor: C.greenDim }}>
+      <section className="dd-card" style={{ ...card, borderColor: C.greenDim }}>
         <SectionLabel icon={CalendarCheck}>PAYMENT SCHEDULE</SectionLabel>
         <div style={{ marginTop: 10, fontFamily: FONT_DISP, fontWeight: 600, fontSize: 15, color: C.green }}>
           Marked paid — nice hit on {next.name}
@@ -2436,7 +2492,7 @@ function SmartPayoffCard({ debts, today, available, buffer, bufferGoal, leftover
   const vsOther = otherMethod.interest - activeMethod.interest;
 
   return (
-    <section style={{ ...card, borderColor: C.blue, background: `linear-gradient(145deg, ${C.surface}, ${C.surface2})` }}>
+    <section className="dd-card" style={{ ...card, borderColor: C.blue, background: `linear-gradient(145deg, ${C.surface}, ${C.surface2})` }}>
       <div style={rowBetween}>
         <SectionLabel icon={Lightbulb}>KILL THIS FIRST</SectionLabel>
         <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.blue }}>
@@ -2507,7 +2563,7 @@ function NetProjectionCard({
   leftoverForExtraDebt,
 }) {
   return (
-    <section style={card}>
+    <section className="dd-card" style={card}>
       <SectionLabel icon={Target}>MONTH-END PROJECTION</SectionLabel>
       <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 15, color: C.text, marginTop: 8 }}>
         Leftover after expenses & loans
@@ -2553,7 +2609,7 @@ function DailyTargetCard({
 }) {
   if (!planMonth) {
     return (
-      <section style={card}>
+      <section className="dd-card" style={card}>
         <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted }}>
           No plan target for this month — you're outside the payoff window. Keep logging; the debt list is still live.
         </div>
@@ -2570,17 +2626,15 @@ function DailyTargetCard({
   const redistributing = pastShortfall > 0.5;
   return (
     <section
+      className="dd-card dd-hero-target dd-rise"
       style={{
         ...card,
-        padding: "18px 16px 16px",
+        padding: "22px 20px 20px",
         borderColor: hit ? C.green : C.lane,
         background: hit
-          ? `radial-gradient(120% 90% at 100% 0%, ${C.greenDim} 0%, ${C.surface} 55%)`
-          : `radial-gradient(120% 90% at 100% 0%, rgba(255,229,102,.14) 0%, ${C.surface} 55%)`,
-        boxShadow: hit
-          ? "0 12px 36px rgba(61,220,151,.12)"
-          : "0 12px 36px rgba(255,229,102,.10)",
-        animation: "ddRise .45s ease both",
+          ? `radial-gradient(140% 100% at 100% 0%, ${C.greenDim} 0%, ${C.surfaceSolid || C.surface} 60%)`
+          : `radial-gradient(140% 100% at 100% 0%, ${C.heroGlow} 0%, ${C.surfaceSolid || C.surface} 60%)`,
+        boxShadow: hit ? `0 16px 48px ${C.greenGlow}` : `0 16px 48px ${C.glowLane}`,
       }}
     >
       <div style={rowBetween}>
@@ -2631,8 +2685,8 @@ function DailyTargetCard({
             style={{
               fontFamily: FONT_MONO,
               fontWeight: 700,
-              fontSize: 42,
-              letterSpacing: -1.8,
+              fontSize: 48,
+              letterSpacing: -2.2,
               color: hit ? C.green : C.text,
               lineHeight: 0.95,
               marginTop: 4,
@@ -2722,7 +2776,7 @@ function MonthlyDashboard({ curMonth, monthTarget, earnedThisMonth, projectedMon
   const projPct = monthTarget > 0 ? Math.min(120, (projectedMonthEnd / monthTarget) * 100) : 0;
   const overBudget = spentThisMonth > baseline;
   return (
-    <section style={card}>
+    <section className="dd-card" style={card}>
       <div style={rowBetween}>
         <SectionLabel icon={Target}>{monthLabel(curMonth + "-01").toUpperCase()}</SectionLabel>
         <span style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint }}>{daysRemaining} days left</span>
@@ -2866,7 +2920,7 @@ function GasNetCard({ earnedToday, gasToday, gasMonth, net }) {
 
 function ShiftStatsCard({ effectiveHourly, hoursThisMonth, earnedThisMonth, bestDays }) {
   return (
-    <section style={card}>
+    <section className="dd-card" style={card}>
       <SectionLabel icon={Timer}>SHIFT STATS</SectionLabel>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 12 }}>
         <div style={miniStat}>
@@ -2910,7 +2964,7 @@ function PaymentHistoryCard({ rows }) {
   const recent = (rows || []).slice(0, 8);
   if (!recent.length) return null;
   return (
-    <section style={card}>
+    <section className="dd-card" style={card}>
       <SectionLabel icon={ClipboardList}>PAYMENT HISTORY</SectionLabel>
       <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 7 }}>
         {recent.map((r) => (
@@ -2935,7 +2989,7 @@ function GasBudgetCard({ gasWeek, weekBudget, gasMonth, monthBudget, dailyBudget
   const weekOver = gasWeek > weekBudget + 0.5;
   const monthOver = gasMonth > monthBudget + 0.5;
   return (
-    <section style={card}>
+    <section className="dd-card" style={card}>
       <SectionLabel icon={Fuel}>GAS VS BUDGET</SectionLabel>
       <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.faint, marginTop: 6 }}>
         {usd0(dailyBudget)}/day planned
@@ -2968,7 +3022,7 @@ function GasBudgetCard({ gasWeek, weekBudget, gasMonth, monthBudget, dailyBudget
 
 function WhatIfCard({ extra, setExtra, whatIfDate, remaining, baselineDaily, customDaily, onApply, onClear }) {
   return (
-    <section style={{ ...card, borderColor: C.blue }}>
+    <section className="dd-card" style={{ ...card, borderColor: C.blue }}>
       <SectionLabel icon={Zap}>WHAT IF</SectionLabel>
       <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 16, color: C.text, marginTop: 8 }}>
         +{usd0(extra)} more per day
@@ -3020,7 +3074,7 @@ function MonthReportCard({ onShareImage, onSharePdf, curMonth, earned, spent, de
     }
   };
   return (
-    <section style={card}>
+    <section className="dd-card" style={card}>
       <div style={rowBetween}>
         <SectionLabel icon={Share2}>MONTH CLOSE-OUT</SectionLabel>
         <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.faint }}>{monthLabel(curMonth + "-01")}</span>
@@ -3155,7 +3209,7 @@ function BufferCard({ buffer, goal, onFund }) {
 function QuickLog({ onEarn, onExpense }) {
   const [mode, setMode] = useState("earn");
   return (
-    <section style={card}>
+    <section className="dd-card" style={card}>
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
         <TogglePill on={mode === "earn"} onClick={() => setMode("earn")}>Log earnings</TogglePill>
         <TogglePill on={mode === "spend"} onClick={() => setMode("spend")}>Log expense</TogglePill>
@@ -3289,7 +3343,7 @@ function DebtsView({ debts, today, onPay, onAdd, onUpdate, onDelete, desktop = f
   const activeTotal = active.reduce((sum, d) => sum + asMoney(d.balance), 0);
   return (
     <div>
-      <section style={{ ...card, position: "sticky", top: desktop ? 0 : 8, zIndex: 8, boxShadow: "0 10px 30px rgba(0,0,0,.22)" }}>
+      <section className="dd-card" style={{ ...card, position: "sticky", top: desktop ? 0 : 8, zIndex: 8, boxShadow: "0 10px 30px rgba(0,0,0,.22)" }}>
         <div style={rowBetween}>
           <div>
             <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: desktop ? 18 : 16 }}>Debt command center</div>
@@ -3356,7 +3410,7 @@ function DebtForm({ debt, onSubmit, onCancel }) {
   const [note, setNote] = useState(debt?.note || "");
   const submit = () => onSubmit({ name, balance, min, deadline, group, type, apr, note });
   return (
-    <section style={{ ...card, borderColor: C.greenDim, boxShadow: "0 14px 34px rgba(0,0,0,.24)" }}>
+    <section className="dd-card" style={{ ...card, borderColor: C.greenDim, boxShadow: "0 14px 34px rgba(0,0,0,.24)" }}>
       <div style={rowBetween}>
         <div>
           <SectionLabel icon={debt ? Pencil : Plus}>{debt ? "EDIT DEBT" : "ADD A NEW DEBT"}</SectionLabel>
@@ -3480,7 +3534,7 @@ function MoneyView({
   return (
     <div style={desktop ? { display: "grid", gridTemplateColumns: "minmax(300px, 1fr) minmax(340px, 1.15fr)", gap: 20, alignItems: "start" } : undefined}>
       <div>
-      <section style={card}>
+      <section className="dd-card" style={card}>
         {editingEarning ? (
           <>
             <SectionLabel icon={Pencil}>EDIT EARNING</SectionLabel>
@@ -3523,7 +3577,7 @@ function MoneyView({
       </section>
 
       <SectionHeading>Recurring expenses</SectionHeading>
-      <section style={card}>
+      <section className="dd-card" style={card}>
         <SectionLabel icon={Repeat}>TEMPLATES</SectionLabel>
         <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginTop: 6, lineHeight: 1.45 }}>
           Rent, insurance, phone — tap Log when due so Money stays accurate.
@@ -3649,7 +3703,7 @@ function ChartsView({ earningsData, debtData, curMonth, baseDaily, desktop = fal
     <div style={desktop ? { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" } : undefined}>
       <div>
       <SectionHeading>Earnings vs target · {monthLabel(curMonth + "-01")}</SectionHeading>
-      <section style={card}>
+      <section className="dd-card" style={card}>
         <ResponsiveContainer width="100%" height={chartH}>
           <LineChart data={earningsData} margin={{ top: 6, right: 6, left: -18, bottom: 0 }}>
             <CartesianGrid stroke={C.lineSoft} vertical={false} />
@@ -3669,7 +3723,7 @@ function ChartsView({ earningsData, debtData, curMonth, baseDaily, desktop = fal
 
       <div>
       <SectionHeading>Total debt over time</SectionHeading>
-      <section style={card}>
+      <section className="dd-card" style={card}>
         <ResponsiveContainer width="100%" height={chartH}>
           <AreaChart data={debtData} margin={{ top: 6, right: 6, left: -18, bottom: 0 }}>
             <defs>
@@ -3702,7 +3756,7 @@ function SettingsView({ settings, setSettings, onExport, onExportCsv, onImportCl
     <div style={desktop ? { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" } : undefined}>
       <div>
       <SectionHeading>Bank connections</SectionHeading>
-      <section style={{ ...card, opacity: 0.92, borderStyle: "dashed" }}>
+      <section className="dd-card" style={{ ...card, opacity: 0.92, borderStyle: "dashed" }}>
         <div style={rowBetween}>
           <SectionLabel icon={Landmark}>PLAID LINK</SectionLabel>
           <span
@@ -3736,7 +3790,7 @@ function SettingsView({ settings, setSettings, onExport, onExportCsv, onImportCl
       </section>
 
       <SectionHeading>Appearance</SectionHeading>
-      <section style={card}>
+      <section className="dd-card" style={card}>
         <SectionLabel>THEME</SectionLabel>
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
           {THEME_OPTIONS.map((opt) => {
@@ -3770,7 +3824,7 @@ function SettingsView({ settings, setSettings, onExport, onExportCsv, onImportCl
       </section>
 
       <SectionHeading>Plan</SectionHeading>
-      <section style={card}>
+      <section className="dd-card" style={card}>
         <SectionLabel>PAYOFF PLAN</SectionLabel>
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
           {["A", "B"].map((p) => {
@@ -3795,7 +3849,7 @@ function SettingsView({ settings, setSettings, onExport, onExportCsv, onImportCl
       </section>
 
       <SectionHeading>Payoff method</SectionHeading>
-      <section style={card}>
+      <section className="dd-card" style={card}>
         <SectionLabel>SNOWBALL VS AVALANCHE</SectionLabel>
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
           <TogglePill on={settings.payoffMethod !== "snowball"} onClick={() => set("payoffMethod", "avalanche")}>Avalanche</TogglePill>
@@ -3809,7 +3863,7 @@ function SettingsView({ settings, setSettings, onExport, onExportCsv, onImportCl
       </section>
 
       <SectionHeading>Baselines</SectionHeading>
-      <section style={card}>
+      <section className="dd-card" style={card}>
         <NumberRow label="Monthly living cost" hint="Rent + car + living" value={settings.monthlyBaseline} onChange={(v) => set("monthlyBaseline", v)} prefix="$" />
         <NumberRow label="Tax set-aside rate" hint="Auto-reserved from income" value={Math.round(settings.taxRate * 100)} onChange={(v) => set("taxRate", (Number(v) || 0) / 100)} suffix="%" />
         <NumberRow label="Emergency buffer goal" hint="Car-repair reserve" value={settings.bufferGoal} onChange={(v) => set("bufferGoal", v)} prefix="$" last />
@@ -3818,7 +3872,7 @@ function SettingsView({ settings, setSettings, onExport, onExportCsv, onImportCl
 
       <div>
       <SectionHeading>Daily gas</SectionHeading>
-      <section style={card}>
+      <section className="dd-card" style={card}>
         <NumberRow
           label="Gas money / day"
           hint="Added on top of debt target so you know total to earn"
@@ -3833,7 +3887,7 @@ function SettingsView({ settings, setSettings, onExport, onExportCsv, onImportCl
       </section>
 
       <SectionHeading>Reminders</SectionHeading>
-      <section style={card}>
+      <section className="dd-card" style={card}>
         <div style={rowBetween}>
           <div>
             <div style={{ fontFamily: FONT_DISP, fontWeight: 600, fontSize: 14 }}>Soft reminders</div>
@@ -3850,7 +3904,7 @@ function SettingsView({ settings, setSettings, onExport, onExportCsv, onImportCl
       {onSignOut && (
         <>
           <SectionHeading>Account</SectionHeading>
-          <section style={card}>
+          <section className="dd-card" style={card}>
             <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginBottom: 11, lineHeight: 1.5 }}>
               Signed in as <span style={{ color: C.text }}>{accountEmail || "you"}</span>. This account’s debts and plan are private.
             </div>
@@ -3862,7 +3916,7 @@ function SettingsView({ settings, setSettings, onExport, onExportCsv, onImportCl
       )}
 
       <SectionHeading>Backup</SectionHeading>
-      <section style={card}>
+      <section className="dd-card" style={card}>
         <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginBottom: 11, lineHeight: 1.5 }}>
           Cloud sync requires login. Export JSON anytime, or CSV for sheets / taxes.
         </div>
@@ -3874,7 +3928,7 @@ function SettingsView({ settings, setSettings, onExport, onExportCsv, onImportCl
       </section>
 
       <SectionHeading>Danger zone</SectionHeading>
-      <section style={{ ...card, borderColor: C.redDim }}>
+      <section className="dd-card" style={{ ...card, borderColor: C.redDim }}>
         {confirmReset ? (
           <div>
             <div style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: C.text, marginBottom: 10 }}>
@@ -3907,15 +3961,15 @@ function SettingsView({ settings, setSettings, onExport, onExportCsv, onImportCl
 /* ================================================================== */
 function SectionLabel({ children, icon: Icon }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      {Icon && <Icon size={13} color={C.faint} />}
-      <span style={{ fontFamily: FONT_MONO, fontSize: 10.5, letterSpacing: 1.2, color: C.faint }}>{children}</span>
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }} className="dd-section-label">
+      {Icon && <Icon size={14} color={C.green} strokeWidth={2} />}
+      <span style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.4, color: C.faint, textTransform: "uppercase" }}>{children}</span>
     </div>
   );
 }
 function SectionHeading({ children }) {
   return (
-    <div style={{ fontFamily: FONT_DISP, fontWeight: 600, fontSize: 13, color: C.muted, margin: "18px 2px 10px", letterSpacing: 0.2 }}>
+    <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 12, color: C.faint, margin: "22px 2px 12px", letterSpacing: 1.2, textTransform: "uppercase" }}>
       {children}
     </div>
   );
@@ -3931,16 +3985,19 @@ function Field({ label, children, flex }) {
 function TogglePill({ on, onClick, children }) {
   return (
     <button
+      type="button"
       onClick={onClick}
+      className="dd-toggle-pill dd-btn"
+      data-on={on}
       style={{
         flex: 1,
-        padding: "8px 0",
-        borderRadius: 9,
+        padding: "10px 0",
+        borderRadius: 12,
         border: `1px solid ${on ? C.green : C.line}`,
         background: on ? C.greenDim : "transparent",
-        color: on ? C.text : C.muted,
+        color: on ? C.green : C.muted,
         fontFamily: FONT_DISP,
-        fontWeight: 600,
+        fontWeight: on ? 700 : 600,
         fontSize: 12.5,
         cursor: "pointer",
       }}
@@ -4026,7 +4083,7 @@ const btnPrimary = {};
 const btnGhost = {};
 const btnSm = {};
 const progTrack = {};
-const progFill = { height: "100%", borderRadius: 6, transition: "width .5s ease" };
+const progFill = { height: "100%", borderRadius: 99, transition: "width .5s cubic-bezier(0.22, 1, 0.36, 1)" };
 const miniStat = {};
 const miniLabel = {};
 const miniVal = { fontFamily: FONT_MONO, fontWeight: 700, fontSize: 15, marginTop: 3 };
@@ -4050,62 +4107,70 @@ const desktopRail = {};
 const rowBetween = { display: "flex", alignItems: "center", justifyContent: "space-between" };
 
 function rebuildSharedStyles() {
+  const glass = C.mode === "dark";
   Object.assign(page, {
     background: `
-      radial-gradient(900px 420px at 50% -10%, ${C.glowLane}, transparent 55%),
-      radial-gradient(700px 360px at 100% 20%, ${C.glowGreen}, transparent 50%),
-      linear-gradient(180deg, ${C.pageMid} 0%, ${C.pageBg} 40%, ${C.pageDeep} 100%)
+      radial-gradient(ellipse 100% 60% at 50% -15%, ${C.glowAccent}, transparent 50%),
+      radial-gradient(ellipse 70% 50% at 100% 10%, ${C.glowGreen}, transparent 45%),
+      radial-gradient(ellipse 60% 40% at 0% 90%, ${C.glowBlue}, transparent 40%),
+      linear-gradient(180deg, ${C.pageMid} 0%, ${C.pageBg} 50%, ${C.pageDeep} 100%)
     `,
     minHeight: "100vh",
     color: C.text,
     fontFamily: FONT_BODY,
     WebkitFontSmoothing: "antialiased",
-    transition: "background .25s ease, color .2s ease",
+    MozOsxFontSmoothing: "grayscale",
+    transition: "background .3s ease, color .2s ease",
   });
   Object.assign(card, {
-    background: C.surface,
+    background: glass ? C.surface : C.surfaceSolid || C.surface,
+    backdropFilter: glass ? "blur(20px) saturate(1.2)" : "none",
+    WebkitBackdropFilter: glass ? "blur(20px) saturate(1.2)" : "none",
     border: `1px solid ${C.line}`,
-    borderRadius: 16,
-    padding: "14px 15px",
-    marginBottom: 12,
+    borderRadius: 20,
+    padding: "16px 18px",
+    marginBottom: 14,
+    boxShadow: C.cardShadow,
   });
   Object.assign(input, {
-    background: C.surface2,
+    background: C.surface2Solid || C.surface2,
     border: `1px solid ${C.line}`,
-    borderRadius: 9,
+    borderRadius: 12,
     color: C.text,
     fontFamily: FONT_MONO,
     fontSize: 13,
-    padding: "9px 10px",
+    padding: "11px 13px",
     width: "100%",
     outline: "none",
     boxSizing: "border-box",
+    transition: "border-color .15s ease, box-shadow .15s ease",
   });
   Object.assign(btnPrimary, {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    gap: 7,
-    background: C.green,
+    gap: 8,
+    background: `linear-gradient(135deg, ${C.green} 0%, ${C.mode === "dark" ? "#1FD88A" : "#0B9B68"} 100%)`,
     color: C.asphalt,
-    border: `1px solid ${C.green}`,
-    borderRadius: 10,
-    padding: "11px 14px",
+    border: "none",
+    borderRadius: 12,
+    padding: "12px 16px",
     fontFamily: FONT_DISP,
     fontWeight: 700,
     fontSize: 13.5,
     cursor: "pointer",
+    boxShadow: `0 4px 16px ${C.greenGlow}`,
   });
   Object.assign(btnGhost, {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    gap: 7,
+    gap: 8,
     background: "transparent",
     color: C.text,
     border: `1px solid ${C.line}`,
-    borderRadius: 10,
-    padding: "11px 14px",
+    borderRadius: 12,
+    padding: "12px 16px",
     fontFamily: FONT_DISP,
     fontWeight: 600,
     fontSize: 13,
@@ -4115,11 +4180,11 @@ function rebuildSharedStyles() {
     display: "inline-flex",
     alignItems: "center",
     gap: 5,
-    background: C.surface2,
+    background: C.surface2Solid || C.surface2,
     color: C.text,
     border: `1px solid ${C.line}`,
-    borderRadius: 8,
-    padding: "7px 11px",
+    borderRadius: 10,
+    padding: "7px 12px",
     fontFamily: FONT_DISP,
     fontWeight: 600,
     fontSize: 11.5,
@@ -4127,57 +4192,66 @@ function rebuildSharedStyles() {
   });
   Object.assign(progTrack, {
     position: "relative",
-    height: 9,
-    background: C.surface2,
-    borderRadius: 6,
+    height: 10,
+    background: C.surface2Solid || C.surface2,
+    borderRadius: 99,
     overflow: "hidden",
     border: `1px solid ${C.lineSoft}`,
   });
   Object.assign(miniStat, {
     flex: 1,
-    background: C.surface2,
+    background: C.surface2Solid || C.surface2,
     border: `1px solid ${C.lineSoft}`,
-    borderRadius: 10,
-    padding: "9px 10px",
+    borderRadius: 14,
+    padding: "11px 12px",
   });
-  Object.assign(miniLabel, { fontFamily: FONT_MONO, fontSize: 9, letterSpacing: 0.8, color: C.faint });
+  Object.assign(miniLabel, { fontFamily: FONT_MONO, fontSize: 9, letterSpacing: 1, color: C.faint, textTransform: "uppercase" });
   Object.assign(badgeIcon, {
-    width: 30, height: 30, borderRadius: 9, background: C.lane,
+    width: 36, height: 36, borderRadius: 12,
+    background: `linear-gradient(135deg, ${C.lane} 0%, ${C.mode === "dark" ? "#E6A830" : "#D97706"} 100%)`,
     display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+    boxShadow: `0 4px 16px ${C.glowLane}`,
   });
   Object.assign(badgeIconSm, {
-    width: 22, height: 22, borderRadius: 7, background: C.lane,
+    width: 24, height: 24, borderRadius: 8,
+    background: `linear-gradient(135deg, ${C.lane} 0%, ${C.mode === "dark" ? "#E6A830" : "#D97706"} 100%)`,
     display: "flex", alignItems: "center", justifyContent: "center",
     boxShadow: `0 0 0 3px ${C.pageBg}`,
   });
   Object.assign(paidBadge, {
     display: "inline-flex", alignItems: "center", gap: 3,
     background: C.greenDim, color: C.green, border: `1px solid ${C.green}`,
-    borderRadius: 6, padding: "2px 6px", fontFamily: FONT_MONO, fontWeight: 700, fontSize: 9.5, letterSpacing: 0.5,
+    borderRadius: 8, padding: "3px 8px", fontFamily: FONT_MONO, fontWeight: 700, fontSize: 9.5, letterSpacing: 0.5,
   });
   Object.assign(bottomNav, {
     position: "fixed", bottom: 0, left: 0, right: 0,
     background: C.navBg,
     borderTop: `1px solid ${C.line}`,
-    backdropFilter: "blur(10px)",
+    backdropFilter: "blur(20px) saturate(1.3)",
+    WebkitBackdropFilter: "blur(20px) saturate(1.3)",
     paddingBottom: "env(safe-area-inset-bottom, 0px)",
     zIndex: 40,
   });
   Object.assign(tooltip, {
-    background: C.surface2, border: `1px solid ${C.line}`, borderRadius: 9,
+    background: C.surface2Solid || C.surface2, border: `1px solid ${C.line}`, borderRadius: 12,
     fontFamily: FONT_MONO, fontSize: 12, color: C.text,
+    boxShadow: C.cardShadow,
   });
   Object.assign(toastStyle, {
     position: "fixed", bottom: 74, left: "50%", transform: "translateX(-50%)",
-    background: C.surface2, border: `1px solid ${C.green}`, color: C.text,
-    borderRadius: 10, padding: "9px 16px", fontFamily: FONT_DISP, fontWeight: 600, fontSize: 12.5,
+    background: C.surface2Solid || C.surface2, border: `1px solid ${C.green}`, color: C.text,
+    borderRadius: 14, padding: "11px 18px", fontFamily: FONT_DISP, fontWeight: 600, fontSize: 13,
     zIndex: 55, whiteSpace: "nowrap",
+    boxShadow: `0 8px 32px ${C.greenGlow}`,
+    animation: "ddRise .35s cubic-bezier(0.22, 1, 0.36, 1) both",
   });
   Object.assign(celebrateBanner, {
     position: "fixed", top: 14, left: "50%", transform: "translateX(-50%)",
     background: C.greenDim, border: `1px solid ${C.green}`, color: C.text,
-    borderRadius: 12, padding: "10px 18px", fontFamily: FONT_DISP, fontWeight: 700, fontSize: 14,
+    borderRadius: 16, padding: "12px 20px", fontFamily: FONT_DISP, fontWeight: 700, fontSize: 14,
     display: "flex", alignItems: "center", gap: 8, zIndex: 61,
+    boxShadow: `0 8px 32px ${C.greenGlow}`,
+    animation: "ddRise .4s cubic-bezier(0.22, 1, 0.36, 1) both",
   });
   Object.assign(desktopShell, {
     display: "flex",
@@ -4185,12 +4259,13 @@ function rebuildSharedStyles() {
     width: "100%",
   });
   Object.assign(desktopSidebar, {
-    width: 228,
+    width: 248,
     flexShrink: 0,
-    padding: "22px 16px 20px",
+    padding: "24px 18px 22px",
     borderRight: `1px solid ${C.line}`,
-    background: C.navBg || "rgba(10,14,20,0.92)",
-    backdropFilter: "blur(12px)",
+    background: C.navBg,
+    backdropFilter: "blur(24px) saturate(1.2)",
+    WebkitBackdropFilter: "blur(24px) saturate(1.2)",
     display: "flex",
     flexDirection: "column",
     position: "sticky",
@@ -4201,8 +4276,8 @@ function rebuildSharedStyles() {
   Object.assign(desktopMain, {
     flex: 1,
     minWidth: 0,
-    maxWidth: 1200,
-    padding: "22px 28px 40px",
+    maxWidth: 1240,
+    padding: "26px 32px 48px",
     boxSizing: "border-box",
   });
   Object.assign(desktopHomeGrid, {
@@ -4241,8 +4316,10 @@ function applyAppTheme(preference) {
   if (typeof document !== "undefined") {
     document.documentElement.dataset.theme = mode;
     document.documentElement.style.colorScheme = mode;
+    applyCssVars(C);
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute("content", C.pageBg);
+    document.body.style.background = C.pageBg;
   }
   return mode;
 }
@@ -4251,36 +4328,43 @@ applyAppTheme("dark");
 
 const chip = (on) => ({
   fontFamily: FONT_DISP, fontWeight: 600, fontSize: 11.5,
-  padding: "6px 11px", borderRadius: 8,
+  padding: "7px 12px", borderRadius: 10,
   border: `1px solid ${on ? C.amber : C.line}`,
   background: on ? C.amberDim : "transparent",
   color: on ? C.text : C.muted, cursor: "pointer",
+  transition: "background .15s ease, border-color .15s ease",
 });
 const planBtn = (on) => ({
   flex: 1, textAlign: "left", cursor: "pointer",
-  borderRadius: 11, padding: "12px 13px",
-  border: `1px solid ${on ? C.lane : C.line}`,
-  background: on ? C.lane : "transparent",
-  color: on ? C.asphalt : C.text,
+  borderRadius: 14, padding: "14px 15px",
+  border: `1px solid ${on ? C.green : C.line}`,
+  background: on ? C.greenDim : "transparent",
+  color: on ? C.green : C.text,
+  boxShadow: on ? `0 4px 16px ${C.greenGlow}` : "none",
+  transition: "border-color .15s ease, background .15s ease, box-shadow .15s ease",
 });
 const navBtn = (on) => ({
-  flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
-  padding: "10px 0 9px", background: "transparent", border: "none",
+  flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+  padding: "12px 0 10px", background: "transparent", border: "none",
   color: on ? C.green : C.faint, cursor: "pointer",
 });
 const sideNavBtn = (on) => ({
   display: "flex",
   alignItems: "center",
-  gap: 10,
+  gap: 11,
   width: "100%",
   textAlign: "left",
-  padding: "11px 12px",
-  borderRadius: 10,
+  padding: "12px 14px",
+  borderRadius: 12,
   border: `1px solid ${on ? C.greenDim : "transparent"}`,
-  background: on ? "rgba(61,220,151,0.12)" : "transparent",
+  background: on ? C.greenDim : "transparent",
   color: on ? C.green : C.muted,
   fontFamily: FONT_DISP,
-  fontWeight: on ? 700 : 560,
+  fontWeight: on ? 700 : 500,
   fontSize: 13.5,
   cursor: "pointer",
+  position: "relative",
+  ...(on ? {
+    boxShadow: `inset 3px 0 0 ${C.green}`,
+  } : {}),
 });
