@@ -22,9 +22,14 @@ export default defineConfig({
               priority: 50,
             },
             {
-              name: 'pdf',
-              test: moduleGroup(['jspdf', 'fflate', 'canvg', 'core-js', 'rgbcolor', 'raf']),
+              name: 'pdf-core',
+              test: moduleGroup(['jspdf']),
               priority: 40,
+            },
+            {
+              name: 'pdf-support',
+              test: moduleGroup(['fflate', 'canvg', 'core-js', 'rgbcolor', 'raf']),
+              priority: 39,
             },
             {
               name: 'html-render',
