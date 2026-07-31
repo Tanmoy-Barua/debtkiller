@@ -14,12 +14,11 @@ import {
 } from "recharts";
 import { cloudEnabled, loadAppState, saveAppState, subscribeAppState, getSession, onAuthChange, signIn, signOut, emptyAppState, ownerEmailConfigured } from "./cloudStore.js";
 import { THEME_OPTIONS, paletteFor, resolveThemeMode, applyCssVars } from "./theme.js";
+import ProgressRing from "./components/ProgressRing.jsx";
 
 const BackgroundFX = lazy(() => import("./three/BackgroundFX.jsx"));
 const LoginFX = lazy(() => import("./three/LoginFX.jsx"));
-const ProgressOrb = lazy(() => import("./three/ProgressOrb.jsx"));
 const CelebrateFX = lazy(() => import("./three/CelebrateFX.jsx"));
-const PayoffSphere = lazy(() => import("./three/PayoffSphere.jsx"));
 
 function Fx({ children }) {
   return <Suspense fallback={null}>{children}</Suspense>;
@@ -1493,7 +1492,7 @@ export default function App() {
       {celebrate && <Confetti />}
       {celebrate && (
         <div style={celebrateBanner}>
-          <Trophy size={18} /> {celebrate} 🎉
+          <Trophy size={18} /> {celebrate}
         </div>
       )}
       {toast && <div style={{ ...toastStyle, bottom: isDesktop ? 28 : 74 }}>{toast}</div>}
@@ -1570,7 +1569,7 @@ export default function App() {
               border: `1px solid ${C.lineSoft}`,
               lineHeight: 1.5,
             }}>
-              Precision payoff cockpit
+              Every mile closer to debt-free
             </div>
           </aside>
           <main style={desktopMain}>
@@ -1584,7 +1583,7 @@ export default function App() {
                   {activeTab.label}
                 </div>
                 <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: C.muted, marginTop: 6 }}>
-                  {tab === "home" ? "Your daily command center" : `Manage your ${activeTab.label.toLowerCase()}`}
+                  {tab === "home" ? "Focus on today’s number — then keep driving" : `Manage your ${activeTab.label.toLowerCase()}`}
                 </div>
               </div>
               <div style={{
@@ -1968,113 +1967,117 @@ function LoginScreen({ onSignedIn }) {
       <Fx>
         <LoginFX accent={C.green} lane={C.lane} blue={C.blue} />
       </Fx>
-      <form
-        onSubmit={submit}
-        className="dd-login-card"
-        style={{
-          position: "relative",
-          zIndex: 2,
-          width: "100%",
-          maxWidth: 420,
-          background: C.surfaceSolid || C.surface,
-          backdropFilter: "blur(24px)",
-          WebkitBackdropFilter: "blur(24px)",
-          border: `1px solid ${C.line}`,
-          borderRadius: 24,
-          padding: "32px 28px 26px",
-          boxShadow: C.cardShadow,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-          <div style={badgeIcon}><Car size={18} color={C.asphalt} strokeWidth={2.2} /></div>
-          <div>
-            <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 22, letterSpacing: -0.5 }}>Debt Destroyer</div>
-            <div style={{ fontFamily: FONT_MONO, fontSize: 9.5, color: C.faint, letterSpacing: 1.4, marginTop: 4, textTransform: "uppercase" }}>Owner access</div>
+      <div className="dd-login-layout">
+        <div className="dd-login-brand">
+          <div style={badgeIcon}><Car size={20} color={C.asphalt} strokeWidth={2.2} /></div>
+          <h1 className="dd-login-title">Debt Destroyer</h1>
+          <p className="dd-login-tagline">Your road to debt-free — clear targets, honest progress, every shift.</p>
+        </div>
+        <form
+          onSubmit={submit}
+          className="dd-login-card"
+          style={{
+            position: "relative",
+            zIndex: 2,
+            width: "100%",
+            maxWidth: 400,
+            background: C.mode === "dark" ? "rgba(10, 14, 20, 0.72)" : "rgba(255,255,255,0.88)",
+            backdropFilter: "blur(28px) saturate(1.25)",
+            WebkitBackdropFilter: "blur(28px) saturate(1.25)",
+            border: `1px solid ${C.line}`,
+            borderRadius: 24,
+            padding: "28px 26px 24px",
+            boxShadow: C.cardShadow,
+          }}
+        >
+          <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 18, letterSpacing: -0.3, marginBottom: 4 }}>
+            Sign in
           </div>
-        </div>
-        <div style={{ fontFamily: FONT_BODY, fontSize: 14, color: C.muted, lineHeight: 1.55, margin: "18px 0 22px" }}>
-          Sign in to your private payoff cockpit. New account signup is disabled.
-        </div>
+          <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: C.muted, lineHeight: 1.5, marginBottom: 20 }}>
+            Private owner access. Keep the plan moving.
+          </div>
 
-        <Field label="Email">
-          <input
-            type="email"
-            autoComplete="username"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="owner@example.com"
-            style={input}
-            className="dd-input"
-            disabled={busy || locked}
-          />
-        </Field>
-        <div style={{ height: 10 }} />
-        <Field label="Password">
-          <div style={{ position: "relative" }}>
+          <Field label="Email">
             <input
-              type={showPw ? "text" : "password"}
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              style={{ ...input, paddingRight: 72 }}
+              type="email"
+              autoComplete="username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="owner@example.com"
+              style={input}
               className="dd-input"
               disabled={busy || locked}
             />
-            <button
-              type="button"
-              onClick={() => setShowPw((v) => !v)}
+          </Field>
+          <div style={{ height: 12 }} />
+          <Field label="Password">
+            <div style={{ position: "relative" }}>
+              <input
+                type={showPw ? "text" : "password"}
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                style={{ ...input, paddingRight: 72 }}
+                className="dd-input"
+                disabled={busy || locked}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPw((v) => !v)}
+                className="dd-btn"
+                style={{
+                  position: "absolute",
+                  right: 8,
+                  top: 8,
+                  ...btnSm,
+                  padding: "6px 10px",
+                  fontSize: 10.5,
+                }}
+              >
+                {showPw ? "Hide" : "Show"}
+              </button>
+            </div>
+          </Field>
+
+          {error && (
+            <div
               style={{
-                position: "absolute",
-                right: 8,
-                top: 7,
-                ...btnSm,
-                padding: "6px 8px",
-                fontSize: 10.5,
+                marginTop: 12,
+                background: C.redDim,
+                border: `1px solid ${C.red}`,
+                borderRadius: 12,
+                padding: "10px 12px",
+                fontFamily: FONT_MONO,
+                fontSize: 11.5,
+                color: C.text,
               }}
             >
-              {showPw ? "Hide" : "Show"}
-            </button>
-          </div>
-        </Field>
+              {locked ? "Too many failed attempts. Refresh and try again later." : error}
+            </div>
+          )}
 
-        {error && (
-          <div
+          <button
+            type="submit"
+            disabled={busy || locked}
+            className="dd-btn dd-btn-primary"
             style={{
-              marginTop: 12,
-              background: C.redDim,
-              border: `1px solid ${C.red}`,
-              borderRadius: 10,
-              padding: "10px 12px",
-              fontFamily: FONT_MONO,
-              fontSize: 11.5,
-              color: C.text,
+              ...btnPrimary,
+              width: "100%",
+              marginTop: 18,
+              opacity: busy || locked ? 0.65 : 1,
             }}
           >
-            {locked ? "Too many failed attempts. Refresh and try again later." : error}
+            <Shield size={15} /> {busy ? "Signing in…" : "Continue"}
+          </button>
+
+          <div style={{ marginTop: 14, fontFamily: FONT_MONO, fontSize: 10, color: C.faint, lineHeight: 1.5, textAlign: "center" }}>
+            {ownerEmailConfigured
+              ? "Owner-only vault · synced securely"
+              : "Local session ready"}
           </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={busy || locked}
-          className="dd-btn dd-btn-primary"
-          style={{
-            ...btnPrimary,
-            width: "100%",
-            marginTop: 16,
-            opacity: busy || locked ? 0.65 : 1,
-          }}
-        >
-          <Shield size={15} /> {busy ? "Signing in…" : "Sign in"}
-        </button>
-
-        <div style={{ marginTop: 14, fontFamily: FONT_MONO, fontSize: 10, color: C.faint, lineHeight: 1.5, textAlign: "center" }}>
-          {ownerEmailConfigured
-            ? "Only the configured owner account can access this dashboard"
-            : "Sign in with your Supabase email and password"}
-        </div>
-      </form>
+        </form>
+      </div>
     </div>
   );
 }
@@ -2701,51 +2704,62 @@ function DailyTargetCard({
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginTop: 14 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.2, color: C.faint }}>TOTAL TO EARN</div>
-          <div
-            style={{
-              fontFamily: FONT_MONO,
-              fontWeight: 700,
-              fontSize: 48,
-              letterSpacing: -2.2,
-              color: hit ? C.green : C.text,
-              lineHeight: 0.95,
-              marginTop: 4,
-            }}
-          >
-            {usd0(totalAim)}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr auto",
+          gap: 18,
+          alignItems: "center",
+          marginTop: 16,
+        }}
+      >
+        <div>
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16 }}>
+            <div>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.2, color: C.faint }}>TOTAL TO EARN</div>
+              <div
+                style={{
+                  fontFamily: FONT_MONO,
+                  fontWeight: 700,
+                  fontSize: 44,
+                  letterSpacing: -2,
+                  color: hit ? C.green : C.text,
+                  lineHeight: 0.95,
+                  marginTop: 4,
+                }}
+              >
+                {usd0(totalAim)}
+              </div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.2, color: C.faint }}>EARNED</div>
+              <div
+                style={{
+                  fontFamily: FONT_MONO,
+                  fontWeight: 700,
+                  fontSize: 26,
+                  letterSpacing: -1,
+                  color: hit ? C.green : C.lane,
+                  marginTop: 4,
+                }}
+              >
+                {usd0(earnedToday)}
+              </div>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.muted, marginTop: 3 }}>
+                {hit ? "Target cleared" : `${usd0(remaining)} to go`}
+              </div>
+            </div>
           </div>
         </div>
-        <div style={{ width: 120, flexShrink: 0 }} className="dd-orb-wrap">
-          <Fx>
-            <ProgressOrb
-              progress={pct}
-              hit={hit}
-              color={hit ? C.green : C.lane}
-              trackColor={C.lineSoft}
-              height={120}
-            />
-          </Fx>
-        </div>
-        <div style={{ textAlign: "right", flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.2, color: C.faint }}>EARNED</div>
-          <div
-            style={{
-              fontFamily: FONT_MONO,
-              fontWeight: 700,
-              fontSize: 26,
-              letterSpacing: -1,
-              color: hit ? C.green : C.lane,
-              marginTop: 4,
-            }}
-          >
-            {usd0(earnedToday)}
-          </div>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.muted, marginTop: 3 }}>
-            {hit ? "Target cleared" : `${usd0(remaining)} to go`}
-          </div>
+        <div className="dd-ring-wrap">
+          <ProgressRing
+            progress={pct}
+            hit={hit}
+            color={hit ? C.green : C.lane}
+            track={C.lineSoft}
+            size={108}
+            sublabel="today"
+          />
         </div>
       </div>
 
@@ -2917,13 +2931,19 @@ function CountdownCard({ days, weeks, freeISO, remaining, pctPaid }) {
             </div>
           </div>
           <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.faint, marginTop: 10 }}>
-            {usd0(remaining)} remaining · {pctPaid.toFixed(1)}% already killed
+            {usd0(remaining)} remaining · {pctPaid.toFixed(1)}% of the mountain gone
           </div>
         </div>
-        <div className="dd-orb-wrap">
-          <Fx>
-            <PayoffSphere progress={pctPaid} height={120} />
-          </Fx>
+        <div className="dd-ring-wrap">
+          <ProgressRing
+            progress={pctPaid}
+            color={C.green}
+            track={C.lineSoft}
+            size={112}
+            label={`${pctPaid.toFixed(0)}%`}
+            sublabel="paid"
+            hit={pctPaid >= 99}
+          />
         </div>
       </div>
     </section>

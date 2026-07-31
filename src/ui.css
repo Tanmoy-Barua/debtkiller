@@ -1,4 +1,4 @@
-/* Debt Destroyer — global design system */
+/* Debt Destroyer — calm, purposeful design system */
 
 *,
 *::before,
@@ -20,7 +20,6 @@ body {
   min-height: 100vh;
 }
 
-/* Scrollbar */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--dd-scrollbar-thumb, #2a3542) transparent;
@@ -49,103 +48,70 @@ body {
   pointer-events: none;
   z-index: 0;
   background:
-    radial-gradient(ellipse 80% 50% at 50% -20%, var(--dd-glow-accent, rgba(46, 240, 160, 0.05)), transparent 60%),
-    radial-gradient(ellipse 60% 40% at 100% 0%, var(--dd-glow-lane, rgba(255, 200, 87, 0.04)), transparent 55%),
-    radial-gradient(ellipse 50% 35% at 0% 100%, var(--dd-glow-blue, rgba(107, 176, 255, 0.03)), transparent 50%);
-  opacity: 0.85;
+    radial-gradient(ellipse 90% 55% at 50% -18%, var(--dd-glow-accent, rgba(46, 240, 160, 0.07)), transparent 58%),
+    radial-gradient(ellipse 55% 40% at 100% 8%, var(--dd-glow-lane, rgba(255, 200, 87, 0.05)), transparent 55%),
+    linear-gradient(180deg, transparent 60%, rgba(0, 0, 0, 0.18) 100%);
 }
 .dd-page > * {
   position: relative;
   z-index: 1;
 }
 
-/* Three.js layers sit under UI */
+/* Three.js — quiet atmosphere */
 .dd-fx-bg {
   z-index: 0 !important;
-  opacity: 0.9;
+  opacity: 0.72;
 }
 .dd-fx-login {
   z-index: 0 !important;
+  opacity: 0.85;
 }
 .dd-fx-celebrate {
   z-index: 58 !important;
 }
-.dd-fx-orb canvas {
-  border-radius: 16px;
-}
-.dd-orb-wrap {
-  border-radius: 16px;
-  overflow: hidden;
-  background: radial-gradient(circle at 50% 45%, rgba(46, 240, 160, 0.08), transparent 70%);
-  border: 1px solid var(--dd-line, rgba(255, 255, 255, 0.08));
+
+.dd-ring-wrap {
+  display: grid;
+  place-items: center;
+  padding: 4px;
 }
 
-@media (max-width: 520px) {
-  .dd-hero-target .dd-orb-wrap {
-    display: none;
-  }
-}
-
-/* Cards float in */
+/* Cards — refined, not bouncy */
 .dd-card {
-  transition: border-color 0.2s ease, box-shadow 0.25s ease, transform 0.25s ease;
-  animation: ddRise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition: border-color 0.2s ease, box-shadow 0.25s ease;
+  animation: ddRise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .dd-card:hover {
-  border-color: var(--dd-line-strong, #3a4a5c);
-  transform: translateY(-2px);
-  box-shadow: var(--dd-card-shadow-hover, 0 8px 32px rgba(0, 0, 0, 0.45));
+  border-color: var(--dd-line-strong, rgba(255, 255, 255, 0.14));
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .dd-card,
-  .dd-rise,
-  .dd-login-card,
-  .dd-progress-fill::after {
-    animation: none !important;
-  }
-  .dd-card:hover {
-    transform: none;
-  }
-  .dd-fx-bg,
-  .dd-fx-login,
-  .dd-fx-celebrate,
-  .dd-orb-wrap {
-    display: none !important;
-  }
-}
-
-
-/* Inputs */
 .dd-input:focus-visible {
   outline: none;
   border-color: var(--dd-green, #2ef0a0) !important;
   box-shadow: 0 0 0 3px var(--dd-focus-ring, rgba(46, 240, 160, 0.2));
 }
 
-/* Buttons */
 .dd-btn {
   transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease, background 0.15s ease;
 }
 .dd-btn:hover:not(:disabled) {
-  filter: brightness(1.06);
+  filter: brightness(1.05);
 }
 .dd-btn:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: scale(0.985);
 }
 .dd-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
 .dd-btn-primary:hover:not(:disabled) {
-  box-shadow: 0 8px 24px var(--dd-green-glow, rgba(46, 240, 160, 0.25));
+  box-shadow: 0 8px 24px var(--dd-green-glow, rgba(46, 240, 160, 0.22));
 }
 .dd-btn-ghost:hover:not(:disabled) {
   background: var(--dd-surface-2, #1a222c);
   border-color: var(--dd-line-strong, #3a4a5c);
 }
 
-/* Navigation */
 .dd-nav-item {
   transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
 }
@@ -153,7 +119,7 @@ body {
   background: var(--dd-nav-hover, rgba(255, 255, 255, 0.04));
 }
 .dd-bottom-nav {
-  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 -10px 36px rgba(0, 0, 0, 0.28);
 }
 .dd-bottom-nav-item {
   position: relative;
@@ -162,17 +128,15 @@ body {
 .dd-bottom-nav-item[data-active="true"]::before {
   content: "";
   position: absolute;
-  top: 4px;
+  top: 5px;
   left: 50%;
   transform: translateX(-50%);
-  width: 28px;
-  height: 3px;
+  width: 22px;
+  height: 2px;
   border-radius: 99px;
   background: var(--dd-green, #2ef0a0);
-  box-shadow: 0 0 12px var(--dd-green-glow, rgba(46, 240, 160, 0.4));
 }
 
-/* Progress */
 .dd-progress-fill {
   position: relative;
   overflow: hidden;
@@ -181,32 +145,18 @@ body {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.22) 50%,
-    transparent 100%
-  );
-  animation: ddShimmer 2.4s ease-in-out infinite;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.18) 50%, transparent 100%);
+  animation: ddShimmer 2.8s ease-in-out infinite;
 }
 
-/* Animations */
 @keyframes ddRise {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-@keyframes ddFadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
   }
 }
 @keyframes ddShimmer {
@@ -217,90 +167,98 @@ body {
     transform: translateX(100%);
   }
 }
-@keyframes ddPulse {
-  0%,
-  100% {
+@keyframes ddFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
     opacity: 1;
-  }
-  50% {
-    opacity: 0.65;
-  }
-}
-@keyframes ddLane {
-  0% {
-    background-position: 0 0;
-  }
-  100% {
-    background-position: 36px 0;
+    transform: translateY(0);
   }
 }
 
 .dd-rise {
   animation: ddRise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-.dd-stagger-1 {
-  animation-delay: 0.05s;
-}
-.dd-stagger-2 {
-  animation-delay: 0.1s;
-}
-.dd-stagger-3 {
-  animation-delay: 0.15s;
-}
 
-/* Login */
+/* Login — brand first */
 .dd-login-shell {
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: 28px 20px;
 }
-@keyframes ddFloat {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-6px); }
+.dd-login-layout {
+  position: relative;
+  z-index: 2;
+  width: min(920px, 100%);
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 36px;
+  align-items: center;
 }
-@keyframes ddGlowPulse {
-  0%, 100% { filter: drop-shadow(0 0 8px var(--dd-green-glow, rgba(46, 240, 160, 0.35))); }
-  50% { filter: drop-shadow(0 0 18px var(--dd-green-glow, rgba(46, 240, 160, 0.65))); }
+.dd-login-brand {
+  animation: ddFadeUp 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-@keyframes ddSpinSlow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+.dd-login-title {
+  margin: 18px 0 0;
+  font-family: "Sora", ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: clamp(36px, 5vw, 52px);
+  letter-spacing: -1.4px;
+  line-height: 1.02;
+  color: var(--dd-text, #F4F7FA);
 }
-
+.dd-login-tagline {
+  margin: 14px 0 0;
+  max-width: 34ch;
+  font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--dd-muted, #94A3B4);
+}
 .dd-login-card {
-  animation: ddRise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
-  backdrop-filter: blur(28px) saturate(1.3);
+  animation: ddFadeUp 0.7s 0.08s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+@media (max-width: 820px) {
+  .dd-login-layout {
+    grid-template-columns: 1fr;
+    gap: 22px;
+    max-width: 420px;
+  }
+  .dd-login-title {
+    font-size: 34px;
+  }
+  .dd-login-tagline {
+    font-size: 14.5px;
+  }
+}
+
+/* Hero target */
 .dd-hero-target {
   position: relative;
   overflow: hidden;
 }
-.dd-hero-target::before {
+.dd-hero-target::after {
   content: "";
   position: absolute;
-  top: -40%;
-  right: -20%;
-  width: 60%;
-  height: 80%;
+  inset: auto -10% -40% auto;
+  width: 55%;
+  height: 70%;
   border-radius: 50%;
-  background: radial-gradient(circle, var(--dd-hero-glow, rgba(255, 200, 87, 0.12)) 0%, transparent 70%);
+  background: radial-gradient(circle, var(--dd-hero-glow, rgba(255, 200, 87, 0.1)) 0%, transparent 70%);
   pointer-events: none;
-  animation: ddFloat 6s ease-in-out infinite;
 }
 
-.dd-countdown-card .dd-orb-wrap {
-  animation: ddGlowPulse 3.2s ease-in-out infinite;
+@media (max-width: 520px) {
+  .dd-hero-target .dd-ring-wrap {
+    display: none;
+  }
 }
 
-.dd-bottom-nav-item[data-active="true"] {
-  animation: ddGlowPulse 2.8s ease-in-out infinite;
-}
-
-
-/* Section accent */
 .dd-section-label::before {
   content: "";
   display: inline-block;
@@ -312,10 +270,24 @@ body {
   vertical-align: middle;
 }
 
-/* Toggle pill */
 .dd-toggle-pill {
   transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
 }
 .dd-toggle-pill[data-on="true"] {
-  box-shadow: 0 4px 16px var(--dd-green-glow, rgba(46, 240, 160, 0.15));
+  box-shadow: 0 4px 14px var(--dd-green-glow, rgba(46, 240, 160, 0.12));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dd-card,
+  .dd-rise,
+  .dd-login-card,
+  .dd-login-brand,
+  .dd-progress-fill::after {
+    animation: none !important;
+  }
+  .dd-fx-bg,
+  .dd-fx-login,
+  .dd-fx-celebrate {
+    display: none !important;
+  }
 }
