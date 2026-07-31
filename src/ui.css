@@ -49,22 +49,72 @@ body {
   pointer-events: none;
   z-index: 0;
   background:
-    radial-gradient(ellipse 80% 50% at 50% -20%, var(--dd-glow-accent, rgba(46, 240, 160, 0.08)), transparent 60%),
-    radial-gradient(ellipse 60% 40% at 100% 0%, var(--dd-glow-lane, rgba(255, 200, 87, 0.06)), transparent 55%),
-    radial-gradient(ellipse 50% 35% at 0% 100%, var(--dd-glow-blue, rgba(107, 176, 255, 0.05)), transparent 50%);
+    radial-gradient(ellipse 80% 50% at 50% -20%, var(--dd-glow-accent, rgba(46, 240, 160, 0.05)), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 100% 0%, var(--dd-glow-lane, rgba(255, 200, 87, 0.04)), transparent 55%),
+    radial-gradient(ellipse 50% 35% at 0% 100%, var(--dd-glow-blue, rgba(107, 176, 255, 0.03)), transparent 50%);
+  opacity: 0.85;
 }
 .dd-page > * {
   position: relative;
   z-index: 1;
 }
 
-/* Cards */
+/* Three.js layers sit under UI */
+.dd-fx-bg {
+  z-index: 0 !important;
+  opacity: 0.9;
+}
+.dd-fx-login {
+  z-index: 0 !important;
+}
+.dd-fx-celebrate {
+  z-index: 58 !important;
+}
+.dd-fx-orb canvas {
+  border-radius: 16px;
+}
+.dd-orb-wrap {
+  border-radius: 16px;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 45%, rgba(46, 240, 160, 0.08), transparent 70%);
+  border: 1px solid var(--dd-line, rgba(255, 255, 255, 0.08));
+}
+
+@media (max-width: 520px) {
+  .dd-hero-target .dd-orb-wrap {
+    display: none;
+  }
+}
+
+/* Cards float in */
 .dd-card {
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.25s ease, transform 0.25s ease;
+  animation: ddRise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .dd-card:hover {
   border-color: var(--dd-line-strong, #3a4a5c);
+  transform: translateY(-2px);
+  box-shadow: var(--dd-card-shadow-hover, 0 8px 32px rgba(0, 0, 0, 0.45));
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .dd-card,
+  .dd-rise,
+  .dd-login-card,
+  .dd-progress-fill::after {
+    animation: none !important;
+  }
+  .dd-card:hover {
+    transform: none;
+  }
+  .dd-fx-bg,
+  .dd-fx-login,
+  .dd-fx-celebrate,
+  .dd-orb-wrap {
+    display: none !important;
+  }
+}
+
 
 /* Inputs */
 .dd-input:focus-visible {
@@ -206,11 +256,24 @@ body {
   justify-content: center;
   padding: 24px;
 }
-.dd-login-card {
-  animation: ddRise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+@keyframes ddFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes ddGlowPulse {
+  0%, 100% { filter: drop-shadow(0 0 8px var(--dd-green-glow, rgba(46, 240, 160, 0.35))); }
+  50% { filter: drop-shadow(0 0 18px var(--dd-green-glow, rgba(46, 240, 160, 0.65))); }
+}
+@keyframes ddSpinSlow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
-/* Hero target card */
+.dd-login-card {
+  animation: ddRise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  backdrop-filter: blur(28px) saturate(1.3);
+}
+
 .dd-hero-target {
   position: relative;
   overflow: hidden;
@@ -225,7 +288,17 @@ body {
   border-radius: 50%;
   background: radial-gradient(circle, var(--dd-hero-glow, rgba(255, 200, 87, 0.12)) 0%, transparent 70%);
   pointer-events: none;
+  animation: ddFloat 6s ease-in-out infinite;
 }
+
+.dd-countdown-card .dd-orb-wrap {
+  animation: ddGlowPulse 3.2s ease-in-out infinite;
+}
+
+.dd-bottom-nav-item[data-active="true"] {
+  animation: ddGlowPulse 2.8s ease-in-out infinite;
+}
+
 
 /* Section accent */
 .dd-section-label::before {

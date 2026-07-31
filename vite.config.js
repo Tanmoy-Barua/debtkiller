@@ -5,19 +5,26 @@ export default defineConfig({
   plugins: [react()],
   base: "./",
   build: {
-    rolldownOptions: {
+    chunkSizeWarningLimit: 950,
+    rollupOptions: {
       output: {
-        codeSplitting: {
-          groups: [
-            { name: "react", test: /node_modules[\\/](react|react-dom)[\\/]/, priority: 50 },
-            { name: "charts", test: /node_modules[\\/](recharts|d3-|victory-vendor)[\\/]/, priority: 40 },
-            { name: "pdf", test: /node_modules[\\/](jspdf|fflate)[\\/]/, priority: 35 },
-            { name: "canvas", test: /node_modules[\\/]html2canvas[\\/]/, priority: 34 },
-            { name: "sanitize", test: /node_modules[\\/]dompurify[\\/]/, priority: 33 },
-            { name: "icons", test: /node_modules[\\/]lucide-react[\\/]/, priority: 32 },
-            { name: "cloud", test: /node_modules[\\/](@supabase|@supabase[\\/]supabase-js)[\\/]/, priority: 31 },
-            { name: "vendor", test: /node_modules[\\/]/, priority: 1 },
-          ],
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("/react/") || id.includes("/react-dom/") || id.includes("/scheduler/")) return "react";
+          if (id.includes("/lucide-react/")) return "icons";
+          if (id.includes("/recharts/") || id.includes("/d3-")) return "charts";
+          if (
+            id.includes("/jspdf/") ||
+            id.includes("/html2canvas/") ||
+            id.includes("/dompurify/") ||
+            id.includes("/@babel/runtime/")
+          ) {
+            return "pdf";
+          }
+          if (id.includes("/@supabase/") || id.includes("/@floating-ui/")) return "cloud";
+          if (id.includes("/@react-three/fiber/")) return "fiber";
+          if (id.includes("/three/")) return "three";
+          return "vendor";
         },
       },
     },
