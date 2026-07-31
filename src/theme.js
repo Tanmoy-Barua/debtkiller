@@ -113,6 +113,9 @@ export function applyCssVars(palette, root = typeof document !== "undefined" ? d
     "--dd-focus-ring": palette.focusRing,
     "--dd-nav-hover": palette.navHover,
     "--dd-scrollbar-thumb": palette.scrollbarThumb,
+    "--dd-text": palette.text,
+    "--dd-muted": palette.muted,
+    "--dd-faint": palette.faint,
   };
   Object.entries(map).forEach(([k, v]) => root.style.setProperty(k, v));
 }
