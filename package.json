@@ -12,12 +12,14 @@
     "test:e2e-theme": "node scripts/e2e-theme.mjs"
   },
   "dependencies": {
+    "@react-three/fiber": "^8.18.0",
     "@supabase/supabase-js": "2.57.4",
     "jspdf": "^4.2.1",
     "lucide-react": "0.468.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "recharts": "2.15.4"
+    "recharts": "2.15.4",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

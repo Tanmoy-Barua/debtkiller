@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
 import {
   Home, TrendingUp, Wallet, BarChart3, Settings as SettingsIcon,
   Plus, Check, AlertTriangle, Download, Upload, Car, Flag, Target,
@@ -14,6 +14,16 @@ import {
 } from "recharts";
 import { cloudEnabled, loadAppState, saveAppState, subscribeAppState, getSession, onAuthChange, signIn, signOut, emptyAppState, ownerEmailConfigured } from "./cloudStore.js";
 import { THEME_OPTIONS, paletteFor, resolveThemeMode, applyCssVars } from "./theme.js";
+
+const BackgroundFX = lazy(() => import("./three/BackgroundFX.jsx"));
+const LoginFX = lazy(() => import("./three/LoginFX.jsx"));
+const ProgressOrb = lazy(() => import("./three/ProgressOrb.jsx"));
+const CelebrateFX = lazy(() => import("./three/CelebrateFX.jsx"));
+const PayoffSphere = lazy(() => import("./three/PayoffSphere.jsx"));
+
+function Fx({ children }) {
+  return <Suspense fallback={null}>{children}</Suspense>;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Palette — mutable so light/dark can repaint shared style objects    */
@@ -1472,6 +1482,14 @@ export default function App() {
 
   return (
     <div style={page} className="dd-page" data-theme={C.mode} data-theme-tick={themeTick}>
+      <Fx>
+        <BackgroundFX mode={C.mode} accent={C.green} lane={C.lane} blue={C.blue} />
+      </Fx>
+      {celebrate && (
+        <Fx>
+          <CelebrateFX colors={[C.green, C.lane, C.blue, C.amber, C.red, "#ffffff"]} />
+        </Fx>
+      )}
       {celebrate && <Confetti />}
       {celebrate && (
         <div style={celebrateBanner}>
@@ -1946,11 +1964,16 @@ function LoginScreen({ onSignedIn }) {
   };
 
   return (
-    <div className="dd-page dd-login-shell" style={{ ...page, minHeight: "100vh" }}>
+    <div className="dd-page dd-login-shell" style={{ ...page, minHeight: "100vh", position: "relative", overflow: "hidden" }}>
+      <Fx>
+        <LoginFX accent={C.green} lane={C.lane} blue={C.blue} />
+      </Fx>
       <form
         onSubmit={submit}
         className="dd-login-card"
         style={{
+          position: "relative",
+          zIndex: 2,
           width: "100%",
           maxWidth: 420,
           background: C.surfaceSolid || C.surface,
@@ -2679,7 +2702,7 @@ function DailyTargetCard({
       </div>
 
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginTop: 14 }}>
-        <div>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.2, color: C.faint }}>TOTAL TO EARN</div>
           <div
             style={{
@@ -2695,7 +2718,18 @@ function DailyTargetCard({
             {usd0(totalAim)}
           </div>
         </div>
-        <div style={{ textAlign: "right" }}>
+        <div style={{ width: 120, flexShrink: 0 }} className="dd-orb-wrap">
+          <Fx>
+            <ProgressOrb
+              progress={pct}
+              hit={hit}
+              color={hit ? C.green : C.lane}
+              trackColor={C.lineSoft}
+              height={120}
+            />
+          </Fx>
+        </div>
+        <div style={{ textAlign: "right", flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.2, color: C.faint }}>EARNED</div>
           <div
             style={{
@@ -2860,6 +2894,7 @@ function EveningNudge({ shortfall, onDismiss, onEnablePush }) {
 function CountdownCard({ days, weeks, freeISO, remaining, pctPaid }) {
   return (
     <section
+      className="dd-card dd-countdown-card"
       style={{
         ...card,
         borderColor: C.greenDim,
@@ -2868,19 +2903,28 @@ function CountdownCard({ days, weeks, freeISO, remaining, pctPaid }) {
       }}
     >
       <SectionLabel icon={CalendarDays}>DEBT-FREE COUNTDOWN</SectionLabel>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
-        <div style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: 40, letterSpacing: -1.5, color: C.green, lineHeight: 1 }}>
-          {days}
-        </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 120px", gap: 12, alignItems: "center", marginTop: 10 }}>
         <div>
-          <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 16, color: C.text }}>days left</div>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginTop: 2 }}>
-            ~{weeks} weeks · {parseISO(freeISO).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: 40, letterSpacing: -1.5, color: C.green, lineHeight: 1 }}>
+              {days}
+            </div>
+            <div>
+              <div style={{ fontFamily: FONT_DISP, fontWeight: 700, fontSize: 16, color: C.text }}>days left</div>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, marginTop: 2 }}>
+                ~{weeks} weeks · {parseISO(freeISO).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+              </div>
+            </div>
+          </div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.faint, marginTop: 10 }}>
+            {usd0(remaining)} remaining · {pctPaid.toFixed(1)}% already killed
           </div>
         </div>
-      </div>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.faint, marginTop: 10 }}>
-        {usd0(remaining)} remaining · {pctPaid.toFixed(1)}% already killed
+        <div className="dd-orb-wrap">
+          <Fx>
+            <PayoffSphere progress={pctPaid} height={120} />
+          </Fx>
+        </div>
       </div>
     </section>
   );
