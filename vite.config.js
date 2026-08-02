@@ -8,8 +8,11 @@ export default defineConfig({
     chunkSizeWarningLimit: 900,
     rolldownOptions: {
       output: {
-        manualChunks: {
-          three: ['three', '@react-three/fiber'],
+        manualChunks(id) {
+          if (id.includes('node_modules/three') || id.includes('node_modules/@react-three/fiber')) {
+            return 'three';
+          }
+          return undefined;
         },
       },
     },
