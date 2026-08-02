@@ -6,7 +6,7 @@ export default defineConfig({
   base: './',
   build: {
     chunkSizeWarningLimit: 900,
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         manualChunks: {
           three: ['three', '@react-three/fiber'],
