@@ -7,7 +7,6 @@ import {
   Timer, Bell, Share2, Fuel, CalendarDays, Trophy, Repeat, ClipboardList, FileSpreadsheet, Image, FileText,
   Sun, Moon, Monitor
 } from "lucide-react";
-import { jsPDF } from "jspdf";
 import {
   LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine
@@ -326,7 +325,8 @@ function drawCloseOutImage({
   });
 }
 
-function buildDetailedCloseOutPdf(data) {
+async function buildDetailedCloseOutPdf(data) {
+  const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
@@ -1249,7 +1249,7 @@ export default function App() {
   const shareCloseOutPdf = async () => {
     try {
       const data = closeOutPayload();
-      const blob = buildDetailedCloseOutPdf(data);
+      const blob = await buildDetailedCloseOutPdf(data);
       await shareOrDownloadBlob(
         blob,
         `debt-destroyer-closeout-${curMonth}.pdf`,
