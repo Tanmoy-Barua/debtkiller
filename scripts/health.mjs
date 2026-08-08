@@ -39,7 +39,7 @@ async function ensureChromium() {
   ];
 
   try {
-    await run("node", probe, { env: appEnv() });
+    await run("node", probe, { env: appEnv(), stdio: "ignore" });
   } catch {
     console.log("Playwright Chromium is missing; installing browser dependencies...");
     await run(npxCmd, ["playwright", "install", "--with-deps", "chromium"], { env: appEnv() });
