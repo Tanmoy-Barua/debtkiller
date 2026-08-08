@@ -148,8 +148,11 @@ Personal IOUs are not in banks — keep those debts manual.
 | `npm run dev` | Vite dev server |
 | `npm run build` | Production build → `dist/` |
 | `npm run preview` | Serve `dist/` locally |
+| `npm run health` | Audit, test, build, preview, and run the browser smoke check |
 | `npm test` | Theme unit checks |
 | `npm run test:e2e-theme` | Browser smoke (Playwright; app must be running) |
+
+The GitHub Actions workflow in `.github/workflows/app-health.yml` runs `npm run health` every day at 07:00 and 19:00 UTC, plus on manual dispatch.
 
 ---
 
