@@ -8,8 +8,15 @@ export default defineConfig({
     chunkSizeWarningLimit: 900,
     rollupOptions: {
       output: {
-        manualChunks: {
-          three: ['three', '@react-three/fiber'],
+        manualChunks(id) {
+          if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/')) return 'react';
+          if (id.includes('node_modules/lucide-react/')) return 'icons';
+          if (id.includes('node_modules/recharts/')) return 'charts';
+          if (id.includes('node_modules/jspdf/') || id.includes('node_modules/html2canvas/')) return 'pdf';
+          if (id.includes('node_modules/@supabase/')) return 'cloud';
+          if (id.includes('node_modules/three/') || id.includes('node_modules/@react-three/fiber/')) return 'three';
+          if (id.includes('node_modules/')) return 'vendor';
+          return undefined;
         },
       },
     },
