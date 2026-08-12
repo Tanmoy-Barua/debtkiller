@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "health": "node scripts/health.mjs",
     "preview": "vite preview",
     "test": "node scripts/test-theme.mjs",
     "test:theme": "node scripts/test-theme.mjs",
@@ -22,10 +23,10 @@
     "three": "^0.185.1"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
-    "@vitejs/plugin-react": "4.3.4",
-    "playwright": "^1.61.1",
-    "vite": "5.4.19"
+    "@types/node": "^26.2.0",
+    "@vitejs/plugin-react": "^6.0.5",
+    "playwright": "^1.62.1",
+    "vite": "^8.2.1"
   },
   "engines": {
     "node": ">=20.19.0"
