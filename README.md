@@ -148,6 +148,7 @@ Personal IOUs are not in banks — keep those debts manual.
 | `npm run dev` | Vite dev server |
 | `npm run build` | Production build → `dist/` |
 | `npm run preview` | Serve `dist/` locally |
+| `npm run health` | Audit dependencies, run theme checks, build, preview, and browser smoke-test |
 | `npm test` | Theme unit checks |
 | `npm run test:e2e-theme` | Browser smoke (Playwright; app must be running) |
 
