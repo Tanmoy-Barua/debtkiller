@@ -150,6 +150,9 @@ Personal IOUs are not in banks — keep those debts manual.
 | `npm run preview` | Serve `dist/` locally |
 | `npm test` | Theme unit checks |
 | `npm run test:e2e-theme` | Browser smoke (Playwright; app must be running) |
+| `npm run health` | Audit dependencies, run theme checks, build, preview, and browser smoke |
+
+The app health workflow runs this command automatically twice daily (07:00 and 19:00 UTC) and can also be started manually from GitHub Actions.
 
 ---
 
