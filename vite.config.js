@@ -5,11 +5,28 @@ export default defineConfig({
   plugins: [react()],
   base: './',
   build: {
-    chunkSizeWarningLimit: 900,
+    chunkSizeWarningLimit: 950,
     rollupOptions: {
       output: {
-        manualChunks: {
-          three: ['three', '@react-three/fiber'],
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) {
+            return 'react-vendor';
+          }
+          if (id.includes('/lucide-react/')) return 'icons';
+          if (id.includes('/recharts/') || id.includes('/d3-')) return 'charts';
+          if (
+            id.includes('/jspdf/') ||
+            id.includes('/dompurify/') ||
+            id.includes('/html2canvas/') ||
+            id.includes('/canvg/')
+          ) {
+            return 'pdf';
+          }
+          if (id.includes('/@supabase/') || id.includes('/@floating-ui/')) return 'cloud';
+          if (id.includes('/@react-three/fiber/')) return 'fiber';
+          if (id.includes('/three/')) return 'three';
+          return 'vendor';
         },
       },
     },
